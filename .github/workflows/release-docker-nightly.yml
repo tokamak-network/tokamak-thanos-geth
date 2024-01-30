@@ -6,6 +6,24 @@ on:
       - 'main'
 
 jobs:
+  version:
+    name: Get version (nightly)
+    runs-on: ubuntu-latest
+    # map the step outputs to job outputs
+    outputs:
+      nightly-docker-tag: ${{ steps.docker-image-name.outputs.nightly-docker-tag }}
+    steps:
+      - name: Check out source code
+        uses: actions/checkout@v4
+        with:
+          # This makes Actions fetch all Git history so that Changesets can generate changelogs with the correct commits
+          fetch-depth: 0
+
+      - name: Docker Image Name
+        id: docker-image-name
+        run: |
+          echo "nightly-docker-tag=nightly-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
   start-runners:
     name: Start EC2 Runner
     runs-on: ubuntu-latest
@@ -37,17 +55,14 @@ jobs:
           echo "Runner label:" ${{ steps.start-ec2-runner.outputs.label }}
           echo "EC2 instances id:" ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
 
-  docker:
-    needs: [start-runners]
+  build-geth:
+    name: Build Geth
+    needs: [start-runners, version]
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
         runner: [ubuntu-latest, ARM64]
     steps:
-      - name: Get versions
-        id: extractver
-        run: echo "GITSHA=$(echo ${GITHUB_SHA} | cut -c1-8)" >> $GITHUB_OUTPUT
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -67,7 +82,7 @@ jobs:
           if [ "$ARCHITECTURE" = "aarch64" ]; then
             ARCHITECTURE="arm64"
           fi
-          echo "docker-image-name=onthertech/titan-op-geth:nightly-${{ steps.extractver.outputs.GITSHA }}-$ARCHITECTURE" >> "$GITHUB_OUTPUT"
+          echo "docker-image-name=onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-$ARCHITECTURE" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -78,7 +93,7 @@ jobs:
 
   stop-runners:
     name: Stop self-hosted EC2 runners
-    needs: [start-runners, docker]
+    needs: [start-runners, build-geth]
     runs-on: ubuntu-latest
     if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
     steps:
@@ -99,13 +114,9 @@ jobs:
 
   merge:
     name: Build multi-arch images
-    needs: [docker]
+    needs: [build-geth, version]
     runs-on: ubuntu-latest
     steps:
-      - name: Get versions
-        id: extractver
-        run: echo "GITSHA=$(echo ${GITHUB_SHA} | cut -c1-8)" >> $GITHUB_OUTPUT
-
       - name: Login to Docker Hub
         uses: docker/login-action@v1
         with:
@@ -115,6 +126,46 @@ jobs:
       - name: Create and push manifest
         uses: Noelware/docker-manifest-action@master
         with:
-          inputs: onthertech/titan-op-geth:nightly-${{ steps.extractver.outputs.GITSHA }}
-          images: onthertech/titan-op-geth:nightly-${{ steps.extractver.outputs.GITSHA }}-amd64,onthertech/titan-op-geth:nightly-${{ steps.extractver.outputs.GITSHA }}-arm64
+          inputs: onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag }}
+          images: onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag}}-amd64,onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-arm64
           push: true
+
+  update-kustomize:
+    name: Update image version in kustomize manifest file(nightly)
+    needs:
+      - version
+      - build-geth
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          repository: onthertech/tokamak-titan-infra
+          ref: main
+          token: ${{ secrets.ACCESS_TOKEN }}
+          path: tokamak-titan-infra
+
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v1
+        with:
+          github-token: ${{ secrets.ACCESS_TOKEN }}
+
+      - name: Update titan-geth Kubernetes resources
+        run: |
+          cd tokamak-titan-infra/titan2/kustomize/overlays/titan-sepolia-test
+          kustomize edit set image onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag}}
+
+    
+      - name: Show updated Kubernetes resources
+        run: |
+          cd tokamak-titan-infra/titan2/kustomize/overlays/titan-sepolia-test
+          cat kustomization.yaml
+
+      - name: Commit and push changes
+        uses: EndBug/add-and-commit@v9
+        with:
+          default_author: github_actions
+          github_token: ${{ secrets.ACCESS_TOKEN }}
+          message: '[AUTO] Update tokamak-titan-geth image tags for sepolia'
+          cwd: 'tokamak-titan-infra/'
