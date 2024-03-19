@@ -126,7 +126,7 @@ jobs:
       - name: Create and push manifest
         uses: Noelware/docker-manifest-action@master
         with:
-          inputs: onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag }}
+          inputs: onthertech/titan-op-geth:nightly, onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag }}
           images: onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag}}-amd64,onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-arm64
           push: true
 
@@ -156,7 +156,6 @@ jobs:
           cd tokamak-titan-infra/titan2/kustomize/overlays/titan-sepolia-test
           kustomize edit set image onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag}}
 
-    
       - name: Show updated Kubernetes resources
         run: |
           cd tokamak-titan-infra/titan2/kustomize/overlays/titan-sepolia-test
