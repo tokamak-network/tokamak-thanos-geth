@@ -67,7 +67,7 @@ jobs:
           if [ "$ARCHITECTURE" = "aarch64" ]; then
             ARCHITECTURE="arm64"
           fi
-          echo "docker-image-name=onthertech/titan-op-geth:nightly-${{ steps.extractver.outputs.RELEASE }}-$ARCHITECTURE" >> "$GITHUB_OUTPUT"
+          echo "docker-image-name=onthertech/thanos-op-geth:nightly-${{ steps.extractver.outputs.RELEASE }}-$ARCHITECTURE" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -115,6 +115,6 @@ jobs:
       - name: Create and push manifest
         uses: Noelware/docker-manifest-action@master
         with:
-          inputs: onthertech/titan-op-geth:nightly-${{ steps.extractver.outputs.RELEASE }}
-          images: onthertech/titan-op-geth:nightly-${{ steps.extractver.outputs.RELEASE }}-amd64,onthertech/titan-op-geth:nightly-${{ steps.extractver.outputs.RELEASE }}-arm64
+          inputs: onthertech/thanos-op-geth:nightly-${{ steps.extractver.outputs.RELEASE }}
+          images: onthertech/thanos-op-geth:nightly-${{ steps.extractver.outputs.RELEASE }}-amd64,onthertech/thanos-op-geth:nightly-${{ steps.extractver.outputs.RELEASE }}-arm64
           push: true

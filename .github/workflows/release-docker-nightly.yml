@@ -82,7 +82,7 @@ jobs:
           if [ "$ARCHITECTURE" = "aarch64" ]; then
             ARCHITECTURE="arm64"
           fi
-          echo "docker-image-name=onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-$ARCHITECTURE" >> "$GITHUB_OUTPUT"
+          echo "docker-image-name=onthertech/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-$ARCHITECTURE" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -126,8 +126,8 @@ jobs:
       - name: Create and push manifest
         uses: Noelware/docker-manifest-action@master
         with:
-          inputs: onthertech/titan-op-geth:nightly, onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag }}
-          images: onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag}}-amd64,onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-arm64
+          inputs: onthertech/thanos-op-geth:nightly, onthertech/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}
+          images: onthertech/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag}}-amd64,onthertech/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-arm64
           push: true
 
   update-kustomize:
@@ -141,24 +141,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
         with:
-          repository: tokamak-network/tokamak-titan-infra
+          repository: tokamak-network/tokamak-thanos-infra
           ref: main
           token: ${{ secrets.ACCESS_TOKEN }}
-          path: tokamak-titan-infra
+          path: tokamak-thanos-infra
 
       - name: Setup Kustomize
         uses: imranismail/setup-kustomize@v1
         with:
           github-token: ${{ secrets.ACCESS_TOKEN }}
 
-      - name: Update titan-geth Kubernetes resources
+      - name: Update thanos-geth Kubernetes resources
         run: |
-          cd tokamak-titan-infra/titan2/kustomize/overlays/titan-sepolia-test
-          kustomize edit set image onthertech/titan-op-geth:${{ needs.version.outputs.nightly-docker-tag}}
+          cd tokamak-thanos-infra/thanos2/kustomize/overlays/thanos-sepolia-test
+          kustomize edit set image onthertech/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag}}
 
       - name: Show updated Kubernetes resources
         run: |
-          cd tokamak-titan-infra/titan2/kustomize/overlays/titan-sepolia-test
+          cd tokamak-thanos-infra/thanos2/kustomize/overlays/thanos-sepolia-test
           cat kustomization.yaml
 
       - name: Commit and push changes
@@ -166,5 +166,5 @@ jobs:
         with:
           default_author: github_actions
           github_token: ${{ secrets.ACCESS_TOKEN }}
-          message: '[AUTO] Update tokamak-titan-geth image tags for sepolia'
-          cwd: 'tokamak-titan-infra/'
+          message: '[AUTO] Update tokamak-thanos-geth image tags for sepolia'
+          cwd: 'tokamak-thanos-infra/'
