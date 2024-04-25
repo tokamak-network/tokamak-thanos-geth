@@ -3,7 +3,7 @@ name: Tokamak Geth Publish (Nightly Version)
 on:
   push:
     branches:
-      - 'main'
+      - 'OR-1538_test-push-docker-image'
 
 jobs:
   version:
