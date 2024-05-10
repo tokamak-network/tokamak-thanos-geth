@@ -44,10 +44,12 @@ jobs:
         with:
           mode: start
           github-token: ${{ secrets.ACCESS_TOKEN }}
-          ec2-image-id: ami-01bd9dc38789ab007
+          ec2-image-id: ami-0ceeb1418a9676af7
           ec2-instance-type: t4g.2xlarge
-          subnet-id: subnet-4aa53021
-          security-group-id: sg-03165a21a3ba6e8b3
+          subnet-id: subnet-04958ddab1cb88c55
+          security-group-id: sg-031082ccee7540e7a
+          iam-role-name: ec2-runner
+          pre-runner-script: shutdown -P +40
 
       - name: Runner status
         id: status
@@ -55,9 +57,18 @@ jobs:
           echo "Runner label:" ${{ steps.start-ec2-runner.outputs.label }}
           echo "EC2 instances id:" ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
 
-  build-geth:
-    name: Build Geth
+  ec2-update-arm64:
+    name: Update EC2 ${{ needs.start-runners.outputs.ec2-instance-id }}
     needs: [start-runners, version]
+    runs-on: ARM64
+    steps:
+      - name: update shutdown behavior
+        run: |
+          aws ec2 modify-instance-attribute --instance-initiated-shutdown-behavior terminate --instance-id ${{ needs.start-runners.outputs.ec2-instance-id }}
+
+  docker:
+    name: Docker build and push
+    needs: [start-runners, version, ec2-update-arm64]
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -93,7 +104,7 @@ jobs:
 
   stop-runners:
     name: Stop self-hosted EC2 runners
-    needs: [start-runners, build-geth]
+    needs: [start-runners, docker]
     runs-on: ubuntu-latest
     if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
     steps:
@@ -114,7 +125,7 @@ jobs:
 
   merge:
     name: Build multi-arch images
-    needs: [build-geth, version]
+    needs: [docker, version]
     runs-on: ubuntu-latest
     steps:
       - name: Login to Docker Hub
@@ -134,7 +145,7 @@ jobs:
     name: Update image version in kustomize manifest file(nightly)
     needs:
       - version
-      - build-geth
+      - docker
     runs-on: ubuntu-latest
 
     steps:
