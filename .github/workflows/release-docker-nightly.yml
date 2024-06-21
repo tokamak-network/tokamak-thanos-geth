@@ -93,7 +93,7 @@ jobs:
           if [ "$ARCHITECTURE" = "aarch64" ]; then
             ARCHITECTURE="arm64"
           fi
-          echo "docker-image-name=onthertech/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-$ARCHITECTURE" >> "$GITHUB_OUTPUT"
+          echo "docker-image-name=tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-$ARCHITECTURE" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -137,8 +137,8 @@ jobs:
       - name: Create and push manifest
         uses: Noelware/docker-manifest-action@master
         with:
-          inputs: onthertech/thanos-op-geth:nightly, onthertech/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}
-          images: onthertech/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag}}-amd64,onthertech/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-arm64
+          inputs: tokamaknetwork/thanos-op-geth:nightly, tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}
+          images: tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag}}-amd64,tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-arm64
           push: true
 
   update-kustomize:
@@ -165,7 +165,7 @@ jobs:
       - name: Update thanos-op-geth Kubernetes resources
         run: |
           cd tokamak-infra/thanos/overlays/thanos-sepolia-test
-          kustomize edit set image onthertech/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag}}
+          kustomize edit set image tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag}}
 
       - name: Show updated Kubernetes resources
         run: |
