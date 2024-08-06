@@ -1,0 +1,37 @@
+# Support setting various labels on the final image
+ARG COMMIT=""
+ARG VERSION=""
+ARG BUILDNUM=""
+
+# Build Geth in a stock Go builder container
+FROM --platform=$BUILDPLATFORM golang:1.21-bookworm as builder
+
+RUN apt-get update
+RUN apt install -y \
+    gcc musl-dev git \
+    gcc-arm-linux-gnueabi libc6-dev-armel-cross \
+    gcc-arm-linux-gnueabihf libc6-dev-armhf-cross \
+    gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+
+# Get dependencies - will also be cached if we won't change go.mod/go.sum
+COPY go.mod /go-ethereum/
+COPY go.sum /go-ethereum/
+RUN cd /go-ethereum && go mod download
+
+ADD . /go-ethereum
+RUN cd /go-ethereum && go run build/ci.go install -arch arm -cc arm-linux-gnueabi-gcc -static ./cmd/geth
+
+# Pull Geth into a second stage deploy alpine container
+FROM alpine:latest
+
+COPY --from=builder /go-ethereum/build/bin/geth /usr/local/bin/
+
+EXPOSE 8545 8546 30303 30303/udp
+ENTRYPOINT ["geth"]
+
+# Add some metadata labels to help programatic image consumption
+ARG COMMIT=""
+ARG VERSION=""
+ARG BUILDNUM=""
+
+LABEL commit="$COMMIT" version="$VERSION" buildnum="$BUILDNUM"
