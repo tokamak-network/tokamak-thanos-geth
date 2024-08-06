@@ -6,55 +6,9 @@ on:
       - 'release-*'
 
 jobs:
-  start-runners:
-    name: Start EC2 Runner
-    runs-on: ubuntu-latest
-    outputs:
-      label: ${{ steps.start-ec2-runner.outputs.label }}
-      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-2
-
-      - name: Start EC2 runner
-        id: start-ec2-runner
-        uses: machulav/ec2-github-runner@v2
-        with:
-          mode: start
-          github-token: ${{ secrets.ACCESS_TOKEN }}
-          ec2-image-id: ami-0ceeb1418a9676af7
-          ec2-instance-type: t4g.2xlarge
-          subnet-id: subnet-0fb32a6561595a820
-          security-group-id: sg-06ecd9031cc2c8899
-          iam-role-name: ec2-runner
-          pre-runner-script: shutdown -P +40
-
-      - name: Runner status
-        id: status
-        run: |
-          echo "Runner label:" ${{ steps.start-ec2-runner.outputs.label }}
-          echo "EC2 instances id:" ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
-
-  ec2-update-arm64:
-    name: Update EC2 ${{ needs.start-runners.outputs.ec2-instance-id }}
-    needs: [start-runners]
-    runs-on: ARM64
-    steps:
-      - name: update shutdown behavior
-        run: |
-          aws ec2 modify-instance-attribute --instance-initiated-shutdown-behavior terminate --instance-id ${{ needs.start-runners.outputs.ec2-instance-id }}
-
   docker:
     name: Docker build and push
-    needs: [start-runners, ec2-update-arm64]
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        runner: [ubuntu-latest, ARM64]
+    runs-on: ubuntu-latest
     steps:
       - name: Get versions
         id: extractver
@@ -69,45 +23,21 @@ jobs:
           username: ${{ secrets.DOCKERHUB_ACCESS_TOKEN_USERNAME }}
           password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN_SECRET }}
 
-      - name: Docker Image Name
-        id: docker-image-name
-        run: |
-          ARCHITECTURE=$(uname -m)
-          if [ "$ARCHITECTURE" = "x86_64" ]; then
-            ARCHITECTURE="amd64"
-          fi
-          if [ "$ARCHITECTURE" = "aarch64" ]; then
-            ARCHITECTURE="arm64"
-          fi
-          echo "docker-image-name=tokamaknetwork/thanos-op-geth:${{ steps.extractver.outputs.RELEASE }}-$ARCHITECTURE" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
+      - name: Build and push for AMD
+        uses: docker/build-push-action@v6
         with:
           push: true
           provenance: false
-          tags: ${{ steps.docker-image-name.outputs.docker-image-name }}
+          tags: tokamaknetwork/thanos-op-geth:${{ steps.extractver.outputs.RELEASE }}-amd64
 
-  stop-runners:
-    name: Stop self-hosted EC2 runners
-    needs: [start-runners, docker]
-    runs-on: ubuntu-latest
-    if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Build and push for ARM
+        uses: docker/build-push-action@v6
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-2
-
-      - name: Stop EC2 runner
-        uses: machulav/ec2-github-runner@v2
-        with:
-          mode: stop
-          github-token: ${{ secrets.ACCESS_TOKEN }}
-          label: ${{ needs.start-runners.outputs.label }}
-          ec2-instance-id: ${{ needs.start-runners.outputs.ec2-instance-id }}
+          push: true
+          provenance: false
+          platforms: linux/arm64
+          file: Dockerfile_ARM
+          tags: tokamaknetwork/thanos-op-geth:${{ steps.extractver.outputs.RELEASE }}-arm64
 
   merge:
     name: Build multi-arch images
