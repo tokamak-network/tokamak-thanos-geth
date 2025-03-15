@@ -505,6 +505,9 @@ func (g *Genesis) ToBlock() *types.Block {
 				head.BlobGasUsed = new(uint64)
 			}
 		}
+		if conf.IsPrague(num, g.Timestamp) {
+			head.RequestsHash = &types.EmptyRequestsHash
+		}
 	}
 	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil)).WithWithdrawals(withdrawals)
 }
