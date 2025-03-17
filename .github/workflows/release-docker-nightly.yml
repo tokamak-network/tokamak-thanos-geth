@@ -3,7 +3,7 @@ name: Tokamak Geth Publish (Nightly Version)
 on:
   push:
     branches:
-      - 'main'
+      - 'check/update-docker-image-pectra'
 
 jobs:
   version:
