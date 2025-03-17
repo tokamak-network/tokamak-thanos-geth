@@ -40,9 +40,11 @@ type sigCache struct {
 func MakeSigner(config *params.ChainConfig, blockNumber *big.Int, blockTime uint64) Signer {
 	var signer Signer
 	switch {
-	case config.IsPrague(blockNumber, blockTime):
+	case config.IsIsthmus(blockTime):
+		signer = NewIsthmusSigner(config.ChainID)
+	case config.IsPrague(blockNumber, blockTime) && !config.IsOptimism():
 		signer = NewPragueSigner(config.ChainID)
-	case config.IsCancun(blockNumber, blockTime):
+	case config.IsCancun(blockNumber, blockTime) && !config.IsOptimism():
 		signer = NewCancunSigner(config.ChainID)
 	case config.IsLondon(blockNumber):
 		signer = NewLondonSigner(config.ChainID)
@@ -69,9 +71,11 @@ func LatestSigner(config *params.ChainConfig) Signer {
 	var signer Signer
 	if config.ChainID != nil {
 		switch {
-		case config.PragueTime != nil:
+		case config.IsthmusTime != nil:
+			signer = NewIsthmusSigner(config.ChainID)
+		case config.PragueTime != nil && !config.IsOptimism():
 			signer = NewPragueSigner(config.ChainID)
-		case config.CancunTime != nil:
+		case config.CancunTime != nil && !config.IsOptimism():
 			signer = NewCancunSigner(config.ChainID)
 		case config.LondonBlock != nil:
 			signer = NewLondonSigner(config.ChainID)
@@ -138,8 +142,7 @@ func MustSignNewTx(prv *ecdsa.PrivateKey, s Signer, txdata TxData) *Transaction 
 // signing method. The cache is invalidated if the cached signer does
 // not match the signer used in the current call.
 func Sender(signer Signer, tx *Transaction) (common.Address, error) {
-	if sc := tx.from.Load(); sc != nil {
-		sigCache := sc.(sigCache)
+	if sigCache := tx.from.Load(); sigCache != nil {
 		// If the signer used to derive from in a previous
 		// call is not the same as used current, invalidate
 		// the cache.
@@ -152,7 +155,7 @@ func Sender(signer Signer, tx *Transaction) (common.Address, error) {
 	if err != nil {
 		return common.Address{}, err
 	}
-	tx.from.Store(sigCache{signer: signer, from: addr})
+	tx.from.Store(&sigCache{signer: signer, from: addr})
 	return addr, nil
 }
 
@@ -250,6 +253,48 @@ func (s pragueSigner) Hash(tx *Transaction) common.Hash {
 		})
 }
 
+// isthmusSigner skips cancun because blob txs are not supported on OP
+type isthmusSigner struct{ pragueSigner }
+
+// NewIsthmusSigner returns a signer that accepts
+// - EIP-7702 set code transactions
+// - NOT EIP-4844 blob transactions
+// - EIP-1559 dynamic fee transactions
+// - EIP-2930 access list transactions,
+// - EIP-155 replay protected transactions, and
+// - legacy Homestead transactions.
+func NewIsthmusSigner(chainId *big.Int) Signer {
+	signer, _ := NewPragueSigner(chainId).(pragueSigner)
+	return isthmusSigner{signer}
+}
+
+func (s isthmusSigner) Sender(tx *Transaction) (common.Address, error) {
+	if tx.Type() == BlobTxType {
+		return common.Address{}, fmt.Errorf("isthmus does not support blob txs: %w", ErrTxTypeNotSupported)
+	}
+
+	return s.pragueSigner.Sender(tx)
+}
+
+func (s isthmusSigner) Equal(s2 Signer) bool {
+	x, ok := s2.(isthmusSigner)
+	return ok && x.chainId.Cmp(s.chainId) == 0
+}
+
+func (s isthmusSigner) SignatureValues(tx *Transaction, sig []byte) (R, S, V *big.Int, err error) {
+	if tx.Type() == BlobTxType {
+		return nil, nil, nil, fmt.Errorf("isthmus does not support blob txs: %w", ErrTxTypeNotSupported)
+	}
+
+	return s.pragueSigner.SignatureValues(tx, sig)
+}
+
+// Hash returns the hash to be signed by the sender.
+// It does not uniquely identify the transaction.
+func (s isthmusSigner) Hash(tx *Transaction) common.Hash {
+	return s.pragueSigner.Hash(tx)
+}
+
 type cancunSigner struct{ londonSigner }
 
 // NewCancunSigner returns a signer that accepts
@@ -288,7 +333,7 @@ func (s cancunSigner) SignatureValues(tx *Transaction, sig []byte) (R, S, V *big
 	}
 	// Check that chain ID of tx matches the signer. We also accept ID zero here,
 	// because it indicates that the chain ID was not specified in the tx.
-	if txdata.ChainID.Sign() != 0 && txdata.ChainID.ToBig().Cmp(s.chainId) != 0 {
+	if txdata.ChainID.Sign() != 0 && txdata.ChainID.CmpBig(s.chainId) != 0 {
 		return nil, nil, nil, fmt.Errorf("%w: have %d want %d", ErrInvalidChainId, txdata.ChainID, s.chainId)
 	}
 	R, S, _ = decodeSignature(sig)
@@ -555,11 +600,11 @@ func (s EIP155Signer) Hash(tx *Transaction) common.Hash {
 // homestead rules.
 type HomesteadSigner struct{ FrontierSigner }
 
-func (s HomesteadSigner) ChainID() *big.Int {
+func (hs HomesteadSigner) ChainID() *big.Int {
 	return nil
 }
 
-func (s HomesteadSigner) Equal(s2 Signer) bool {
+func (hs HomesteadSigner) Equal(s2 Signer) bool {
 	_, ok := s2.(HomesteadSigner)
 	return ok
 }
@@ -582,11 +627,11 @@ func (hs HomesteadSigner) Sender(tx *Transaction) (common.Address, error) {
 // frontier rules.
 type FrontierSigner struct{}
 
-func (s FrontierSigner) ChainID() *big.Int {
+func (fs FrontierSigner) ChainID() *big.Int {
 	return nil
 }
 
-func (s FrontierSigner) Equal(s2 Signer) bool {
+func (fs FrontierSigner) Equal(s2 Signer) bool {
 	_, ok := s2.(FrontierSigner)
 	return ok
 }
@@ -668,6 +713,6 @@ func deriveChainId(v *big.Int) *big.Int {
 		}
 		return new(big.Int).SetUint64((v - 35) / 2)
 	}
-	v = new(big.Int).Sub(v, big.NewInt(35))
-	return v.Div(v, big.NewInt(2))
+	vCopy := new(big.Int).Sub(v, big.NewInt(35))
+	return vCopy.Rsh(vCopy, 1)
 }

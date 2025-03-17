@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -59,12 +58,18 @@ type Transaction struct {
 	time  time.Time // Time first seen locally (spam avoidance)
 
 	// caches
-	hash atomic.Value
-	size atomic.Value
-	from atomic.Value
+	hash atomic.Pointer[common.Hash]
+	size atomic.Uint64
+	from atomic.Pointer[sigCache]
 
 	// cache of details to compute the data availability fee
 	rollupCostData atomic.Value
+
+	// optional preconditions for inclusion
+	conditional atomic.Pointer[TransactionConditional]
+
+	// an indicator if this transaction is rejected during block building
+	rejected atomic.Bool
 }
 
 // NewTx creates a new transaction.
@@ -212,10 +217,10 @@ func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
 		inner = new(DynamicFeeTx)
 	case BlobTxType:
 		inner = new(BlobTx)
-	case DepositTxType:
-		inner = new(DepositTx)
 	case SetCodeTxType:
 		inner = new(SetCodeTx)
+	case DepositTxType:
+		inner = new(DepositTx)
 	default:
 		return nil, ErrTxTypeNotSupported
 	}
@@ -337,8 +342,11 @@ func (tx *Transaction) To() *common.Address {
 // e.g. a user deposit event, or a L1 info deposit included in a specific L2 block height.
 // Non-deposit transactions return a zeroed hash.
 func (tx *Transaction) SourceHash() common.Hash {
-	if dep, ok := tx.inner.(*DepositTx); ok {
-		return dep.SourceHash
+	switch tx.inner.(type) {
+	case *DepositTx:
+		return tx.inner.(*DepositTx).SourceHash
+	case *depositTxWithNonce:
+		return tx.inner.(*depositTxWithNonce).SourceHash
 	}
 	return common.Hash{}
 }
@@ -346,8 +354,11 @@ func (tx *Transaction) SourceHash() common.Hash {
 // Mint returns the ETH to mint in the deposit tx.
 // This returns nil if there is nothing to mint, or if this is not a deposit tx.
 func (tx *Transaction) Mint() *big.Int {
-	if dep, ok := tx.inner.(*DepositTx); ok {
-		return dep.Mint
+	switch tx.inner.(type) {
+	case *DepositTx:
+		return tx.inner.(*DepositTx).Mint
+	case *depositTxWithNonce:
+		return tx.inner.(*depositTxWithNonce).Mint
 	}
 	return nil
 }
@@ -390,6 +401,26 @@ func (tx *Transaction) RollupCostData() RollupCostData {
 	return out
 }
 
+// Conditional returns the conditional attached to the transaction
+func (tx *Transaction) Conditional() *TransactionConditional {
+	return tx.conditional.Load()
+}
+
+// SetConditional attaches a conditional to the transaction
+func (tx *Transaction) SetConditional(cond *TransactionConditional) {
+	tx.conditional.Store(cond)
+}
+
+// Rejected will mark this transaction as rejected.
+func (tx *Transaction) SetRejected() {
+	tx.rejected.Store(true)
+}
+
+// Rejected returns the rejected status of this tx
+func (tx *Transaction) Rejected() bool {
+	return tx.rejected.Load()
+}
+
 // RawSignatureValues returns the V, R, S signature values of the transaction.
 // The return values should not be modified by the caller.
 // The return values may be nil or zero, if the transaction is unsigned.
@@ -429,10 +460,16 @@ func (tx *Transaction) EffectiveGasTip(baseFee *big.Int) (*big.Int, error) {
 	}
 	var err error
 	gasFeeCap := tx.GasFeeCap()
-	if gasFeeCap.Cmp(baseFee) == -1 {
+	if gasFeeCap.Cmp(baseFee) < 0 {
 		err = ErrGasFeeCapTooLow
 	}
-	return math.BigMin(tx.GasTipCap(), gasFeeCap.Sub(gasFeeCap, baseFee)), err
+	gasFeeCap = gasFeeCap.Sub(gasFeeCap, baseFee)
+
+	gasTipCap := tx.GasTipCap()
+	if gasTipCap.Cmp(gasFeeCap) < 0 {
+		return gasTipCap, err
+	}
+	return gasFeeCap, err
 }
 
 // EffectiveGasTipValue is identical to EffectiveGasTip, but does not return an
@@ -532,9 +569,53 @@ func (tx *Transaction) WithoutBlobTxSidecar() *Transaction {
 	return cpy
 }
 
-// SetTime sets the decoding time of a transaction. This is used by tests to set
-// arbitrary times and by persistent transaction pools when loading old txs from
-// disk.
+// WithBlobTxSidecar returns a copy of tx with the blob sidecar added.
+func (tx *Transaction) WithBlobTxSidecar(sideCar *BlobTxSidecar) *Transaction {
+	blobtx, ok := tx.inner.(*BlobTx)
+	if !ok {
+		return tx
+	}
+	cpy := &Transaction{
+		inner: blobtx.withSidecar(sideCar),
+		time:  tx.time,
+	}
+	// Note: tx.size cache not carried over because the sidecar is included in size!
+	if h := tx.hash.Load(); h != nil {
+		cpy.hash.Store(h)
+	}
+	if f := tx.from.Load(); f != nil {
+		cpy.from.Store(f)
+	}
+	return cpy
+}
+
+// SetCodeAuthorizations returns the authorizations list of the transaction.
+func (tx *Transaction) SetCodeAuthorizations() []SetCodeAuthorization {
+	setcodetx, ok := tx.inner.(*SetCodeTx)
+	if !ok {
+		return nil
+	}
+	return setcodetx.AuthList
+}
+
+// SetCodeAuthorities returns a list of each authorization's corresponding authority.
+func (tx *Transaction) SetCodeAuthorities() []common.Address {
+	setcodetx, ok := tx.inner.(*SetCodeTx)
+	if !ok {
+		return nil
+	}
+	auths := make([]common.Address, 0, len(setcodetx.AuthList))
+	for _, auth := range setcodetx.AuthList {
+		if addr, err := auth.Authority(); err == nil {
+			auths = append(auths, addr)
+		}
+	}
+	return auths
+}
+
+// SetTime sets the decoding time of a transaction. Used by the sequencer API to
+// determine mempool time spent by conditional txs and by tests to set arbitrary
+// times and by persistent transaction pools when loading old txs from disk.
 func (tx *Transaction) SetTime(t time.Time) {
 	tx.time = t
 }
@@ -548,7 +629,7 @@ func (tx *Transaction) Time() time.Time {
 // Hash returns the transaction hash.
 func (tx *Transaction) Hash() common.Hash {
 	if hash := tx.hash.Load(); hash != nil {
-		return hash.(common.Hash)
+		return *hash
 	}
 
 	var h common.Hash
@@ -557,15 +638,15 @@ func (tx *Transaction) Hash() common.Hash {
 	} else {
 		h = prefixedRlpHash(tx.Type(), tx.inner)
 	}
-	tx.hash.Store(h)
+	tx.hash.Store(&h)
 	return h
 }
 
 // Size returns the true encoded storage size of the transaction, either by encoding
 // and returning it, or returning a previously cached value.
 func (tx *Transaction) Size() uint64 {
-	if size := tx.size.Load(); size != nil {
-		return size.(uint64)
+	if size := tx.size.Load(); size > 0 {
+		return size
 	}
 
 	// Cache miss, encode and cache.
@@ -587,15 +668,6 @@ func (tx *Transaction) Size() uint64 {
 
 	tx.size.Store(size)
 	return size
-}
-
-// SetCodeAuthorizations returns the authorizations list of the transaction.
-func (tx *Transaction) SetCodeAuthorizations() []SetCodeAuthorization {
-	setcodetx, ok := tx.inner.(*SetCodeTx)
-	if !ok {
-		return nil
-	}
-	return setcodetx.AuthList
 }
 
 // WithSignature returns a new transaction with the given signature.
@@ -631,11 +703,11 @@ func (s Transactions) EncodeIndex(i int, w *bytes.Buffer) {
 	}
 }
 
-// TxDifference returns a new set which is the difference between a and b.
+// TxDifference returns a new set of transactions that are present in a but not in b.
 func TxDifference(a, b Transactions) Transactions {
 	keep := make(Transactions, 0, len(a))
 
-	remove := make(map[common.Hash]struct{})
+	remove := make(map[common.Hash]struct{}, b.Len())
 	for _, tx := range b {
 		remove[tx.Hash()] = struct{}{}
 	}
@@ -649,7 +721,7 @@ func TxDifference(a, b Transactions) Transactions {
 	return keep
 }
 
-// HashDifference returns a new set which is the difference between a and b.
+// HashDifference returns a new set of hashes that are present in a but not in b.
 func HashDifference(a, b []common.Hash) []common.Hash {
 	keep := make([]common.Hash, 0, len(a))
 
