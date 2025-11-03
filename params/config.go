@@ -56,6 +56,31 @@ var (
 	devnetRegolithTime = uint64(1677984480)
 	// August 16, 2023 @ 3:34:22 am UTC
 	chaosnetRegolithTime = uint64(1692156862)
+
+	// DefaultCancunBlobConfig is the default blob configuration for the Cancun fork.
+	DefaultCancunBlobConfig = &BlobConfig{
+		Target:         3,
+		Max:            6,
+		UpdateFraction: 3338477,
+	}
+	// DefaultPragueBlobConfig is the default blob configuration for the Prague fork.
+	DefaultPragueBlobConfig = &BlobConfig{
+		Target:         6,
+		Max:            9,
+		UpdateFraction: 5007716,
+	}
+	// DefaultOsakaBlobConfig is the default blob configuration for the Osaka fork.
+	DefaultOsakaBlobConfig = &BlobConfig{
+		Target:         6,
+		Max:            9,
+		UpdateFraction: 5007716,
+	}
+	// DefaultBlobSchedule is the latest configured blob schedule for Ethereum mainnet.
+	DefaultBlobSchedule = &BlobScheduleConfig{
+		Cancun: DefaultCancunBlobConfig,
+		Prague: DefaultPragueBlobConfig,
+		Osaka:  DefaultOsakaBlobConfig,
+	}
 )
 
 func newUint64(val uint64) *uint64 { return &val }
@@ -387,7 +412,13 @@ type ChainConfig struct {
 	ShanghaiTime *uint64 `json:"shanghaiTime,omitempty"` // Shanghai switch time (nil = no fork, 0 = already on shanghai)
 	CancunTime   *uint64 `json:"cancunTime,omitempty"`   // Cancun switch time (nil = no fork, 0 = already on cancun)
 	PragueTime   *uint64 `json:"pragueTime,omitempty"`   // Prague switch time (nil = no fork, 0 = already on prague)
+	OsakaTime    *uint64 `json:"osakaTime,omitempty"`    // Osaka switch time (nil = no fork, 0 = already on osaka)
 	VerkleTime   *uint64 `json:"verkleTime,omitempty"`   // Verkle switch time (nil = no fork, 0 = already on verkle)
+	BPO1Time     *uint64 `json:"bpo1Time,omitempty"`     // BPO1 switch time (nil = no fork, 0 = already on bpo1)
+	BPO2Time     *uint64 `json:"bpo2Time,omitempty"`     // BPO2 switch time (nil = no fork, 0 = already on bpo2)
+	BPO3Time     *uint64 `json:"bpo3Time,omitempty"`     // BPO3 switch time (nil = no fork, 0 = already on bpo3)
+	BPO4Time     *uint64 `json:"bpo4Time,omitempty"`     // BPO4 switch time (nil = no fork, 0 = already on bpo4)
+	BPO5Time     *uint64 `json:"bpo5Time,omitempty"`     // BPO5 switch time (nil = no fork, 0 = already on bpo5)
 
 	BedrockBlock *big.Int `json:"bedrockBlock,omitempty"` // Bedrock switch block (nil = no fork, 0 = already on optimism bedrock)
 	RegolithTime *uint64  `json:"regolithTime,omitempty"` // Regolith switch time (nil = no fork, 0 = already on optimism regolith)
@@ -408,8 +439,9 @@ type ChainConfig struct {
 	TerminalTotalDifficultyPassed bool `json:"terminalTotalDifficultyPassed,omitempty"`
 
 	// Various consensus engines
-	Ethash *EthashConfig `json:"ethash,omitempty"`
-	Clique *CliqueConfig `json:"clique,omitempty"`
+	Ethash             *EthashConfig       `json:"ethash,omitempty"`
+	Clique             *CliqueConfig       `json:"clique,omitempty"`
+	BlobScheduleConfig *BlobScheduleConfig `json:"blobSchedule,omitempty"`
 
 	// Optimism config, nil if not active
 	Optimism *OptimismConfig `json:"optimism,omitempty"`
@@ -432,6 +464,26 @@ type CliqueConfig struct {
 // String implements the stringer interface, returning the consensus engine details.
 func (c *CliqueConfig) String() string {
 	return "clique"
+}
+
+// BlobConfig stores the configuration for blob-related parameters.
+type BlobConfig struct {
+	Target         uint64 `json:"target"`
+	Max            uint64 `json:"max"`
+	UpdateFraction uint64 `json:"updateFraction"`
+}
+
+// BlobScheduleConfig stores the configuration for blob-related parameters at each fork.
+type BlobScheduleConfig struct {
+	Cancun *BlobConfig `json:"cancun,omitempty"`
+	Prague *BlobConfig `json:"prague,omitempty"`
+	Osaka  *BlobConfig `json:"osaka,omitempty"`
+	Verkle *BlobConfig `json:"verkle,omitempty"`
+	BPO1   *BlobConfig `json:"bpo1,omitempty"`
+	BPO2   *BlobConfig `json:"bpo2,omitempty"`
+	BPO3   *BlobConfig `json:"bpo3,omitempty"`
+	BPO4   *BlobConfig `json:"bpo4,omitempty"`
+	BPO5   *BlobConfig `json:"bpo5,omitempty"`
 }
 
 // OptimismConfig is the optimism config.
@@ -1079,5 +1131,71 @@ func (c *ChainConfig) Rules(num *big.Int, isMerge bool, timestamp uint64) Rules 
 		IsOptimismRegolith: isMerge && c.IsOptimismRegolith(timestamp),
 		IsOptimismCanyon:   isMerge && c.IsOptimismCanyon(timestamp),
 		IsOptimismFjord:    isMerge && c.IsOptimismFjord(timestamp),
+	}
+}
+
+// BlobConfig returns the blob configuration for the specified fork.
+// If the fork isn't defined or isn't a time-based fork, returns nil.
+func (c *ChainConfig) BlobConfig(fork forks.Fork) *BlobConfig {
+	if c.BlobScheduleConfig == nil {
+		// Use default configurations if no custom schedule is set
+		switch fork {
+		case forks.Osaka:
+			return DefaultOsakaBlobConfig
+		case forks.Prague:
+			return DefaultPragueBlobConfig
+		case forks.Cancun:
+			return DefaultCancunBlobConfig
+		default:
+			return nil
+		}
+	}
+
+	switch fork {
+	case forks.BPO5:
+		return c.BlobScheduleConfig.BPO5
+	case forks.BPO4:
+		return c.BlobScheduleConfig.BPO4
+	case forks.BPO3:
+		return c.BlobScheduleConfig.BPO3
+	case forks.BPO2:
+		return c.BlobScheduleConfig.BPO2
+	case forks.BPO1:
+		return c.BlobScheduleConfig.BPO1
+	case forks.Osaka:
+		return c.BlobScheduleConfig.Osaka
+	case forks.Prague:
+		return c.BlobScheduleConfig.Prague
+	case forks.Cancun:
+		return c.BlobScheduleConfig.Cancun
+	default:
+		return nil
+	}
+}
+
+// Timestamp returns the timestamp of the specified fork. Returns nil if
+// the fork isn't defined or isn't a time-based fork.
+func (c *ChainConfig) Timestamp(fork forks.Fork) *uint64 {
+	switch {
+	case fork == forks.BPO5:
+		return c.BPO5Time
+	case fork == forks.BPO4:
+		return c.BPO4Time
+	case fork == forks.BPO3:
+		return c.BPO3Time
+	case fork == forks.BPO2:
+		return c.BPO2Time
+	case fork == forks.BPO1:
+		return c.BPO1Time
+	case fork == forks.Osaka:
+		return c.OsakaTime
+	case fork == forks.Prague:
+		return c.PragueTime
+	case fork == forks.Cancun:
+		return c.CancunTime
+	case fork == forks.Shanghai:
+		return c.ShanghaiTime
+	default:
+		return nil
 	}
 }
