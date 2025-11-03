@@ -18,7 +18,9 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"io"
+	"net"
 	"sync"
 	"sync/atomic"
 
@@ -52,6 +54,9 @@ type Server struct {
 	batchItemLimit     int
 	batchResponseLimit int
 	httpBodyLimit      int
+	wsReadLimit        int64
+
+	recorder Recorder // optional, may be nil
 }
 
 // NewServer creates a new server instance with no registered handlers.
@@ -60,6 +65,7 @@ func NewServer() *Server {
 		idgen:         randomIDGenerator(),
 		codecs:        make(map[ServerCodec]struct{}),
 		httpBodyLimit: defaultBodyLimit,
+		wsReadLimit:   wsDefaultReadLimit,
 	}
 	server.run.Store(true)
 	// Register the default service providing meta information about the RPC service such
@@ -67,6 +73,10 @@ func NewServer() *Server {
 	rpcService := &RPCService{server}
 	server.RegisterName(MetadataApi, rpcService)
 	return server
+}
+
+func (s *Server) SetRecorder(recorder Recorder) {
+	s.recorder = recorder
 }
 
 // SetBatchLimits sets limits applied to batch requests. There are two limits: 'itemLimit'
@@ -87,8 +97,15 @@ func (s *Server) SetHTTPBodyLimit(limit int) {
 	s.httpBodyLimit = limit
 }
 
+// SetWebsocketReadLimit sets the limit for max message size for Websocket requests.
+//
+// This method should be called before processing any requests via Websocket server.
+func (s *Server) SetWebsocketReadLimit(limit int64) {
+	s.wsReadLimit = limit
+}
+
 // RegisterName creates a service for the given receiver type under the given name. When no
-// methods on the given receiver match the criteria to be either a RPC method or a
+// methods on the given receiver match the criteria to be either an RPC method or a
 // subscription an error is returned. Otherwise a new service is created and added to the
 // service collection this server provides to clients.
 func (s *Server) RegisterName(name string, receiver interface{}) error {
@@ -112,6 +129,7 @@ func (s *Server) ServeCodec(codec ServerCodec, options CodecOption) {
 		idgen:              s.idgen,
 		batchItemLimit:     s.batchItemLimit,
 		batchResponseLimit: s.batchResponseLimit,
+		recorder:           s.recorder,
 	}
 	c := initClient(codec, &s.services, cfg)
 	<-codec.closed()
@@ -146,13 +164,14 @@ func (s *Server) serveSingleRequest(ctx context.Context, codec ServerCodec) {
 	}
 
 	h := newHandler(ctx, codec, s.idgen, &s.services, s.batchItemLimit, s.batchResponseLimit)
+	h.recorder = s.recorder
 	h.allowSubscribe = false
 	defer h.close(io.EOF, nil)
 
 	reqs, batch, err := codec.readBatch()
 	if err != nil {
-		if err != io.EOF {
-			resp := errorMessage(&invalidMessageError{"parse error"})
+		if msg := messageForReadError(err); msg != "" {
+			resp := errorMessage(&invalidMessageError{msg})
 			codec.writeJSON(ctx, resp, true)
 		}
 		return
@@ -162,6 +181,20 @@ func (s *Server) serveSingleRequest(ctx context.Context, codec ServerCodec) {
 	} else {
 		h.handleMsg(reqs[0])
 	}
+}
+
+func messageForReadError(err error) string {
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		if netErr.Timeout() {
+			return "read timeout"
+		} else {
+			return "read error"
+		}
+	} else if err != io.EOF {
+		return "parse error"
+	}
+	return ""
 }
 
 // Stop stops reading new requests, waits for stopPendingRequestTimeout to allow pending

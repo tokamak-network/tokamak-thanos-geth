@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package ethclient
+package ethclient_test
 
 import (
 	"bytes"
@@ -29,18 +29,20 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
+	"github.com/ethereum/go-ethereum/internal/ethapi/override"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -48,162 +50,41 @@ import (
 
 // Verify that Client implements the ethereum interfaces.
 var (
-	_ = ethereum.ChainReader(&Client{})
-	_ = ethereum.TransactionReader(&Client{})
-	_ = ethereum.ChainStateReader(&Client{})
-	_ = ethereum.ChainSyncReader(&Client{})
-	_ = ethereum.ContractCaller(&Client{})
-	_ = ethereum.GasEstimator(&Client{})
-	_ = ethereum.GasPricer(&Client{})
-	_ = ethereum.LogFilterer(&Client{})
-	_ = ethereum.PendingStateReader(&Client{})
-	// _ = ethereum.PendingStateEventer(&Client{})
-	_ = ethereum.PendingContractCaller(&Client{})
+	_ = ethereum.ChainReader(&ethclient.Client{})
+	_ = ethereum.TransactionReader(&ethclient.Client{})
+	_ = ethereum.ChainStateReader(&ethclient.Client{})
+	_ = ethereum.ChainSyncReader(&ethclient.Client{})
+	_ = ethereum.ContractCaller(&ethclient.Client{})
+	_ = ethereum.GasEstimator(&ethclient.Client{})
+	_ = ethereum.GasPricer(&ethclient.Client{})
+	_ = ethereum.LogFilterer(&ethclient.Client{})
+	_ = ethereum.PendingStateReader(&ethclient.Client{})
+	// _ = ethereum.PendingStateEventer(&ethclient.Client{})
+	_ = ethereum.PendingContractCaller(&ethclient.Client{})
 )
 
-func TestToFilterArg(t *testing.T) {
-	blockHashErr := errors.New("cannot specify both BlockHash and FromBlock/ToBlock")
-	addresses := []common.Address{
-		common.HexToAddress("0xD36722ADeC3EdCB29c8e7b5a47f352D701393462"),
-	}
-	blockHash := common.HexToHash(
-		"0xeb94bb7d78b73657a9d7a99792413f50c0a45c51fc62bdcb08a53f18e9a2b4eb",
-	)
-
-	for _, testCase := range []struct {
-		name   string
-		input  ethereum.FilterQuery
-		output interface{}
-		err    error
-	}{
-		{
-			"without BlockHash",
-			ethereum.FilterQuery{
-				Addresses: addresses,
-				FromBlock: big.NewInt(1),
-				ToBlock:   big.NewInt(2),
-				Topics:    [][]common.Hash{},
-			},
-			map[string]interface{}{
-				"address":   addresses,
-				"fromBlock": "0x1",
-				"toBlock":   "0x2",
-				"topics":    [][]common.Hash{},
-			},
-			nil,
-		},
-		{
-			"with nil fromBlock and nil toBlock",
-			ethereum.FilterQuery{
-				Addresses: addresses,
-				Topics:    [][]common.Hash{},
-			},
-			map[string]interface{}{
-				"address":   addresses,
-				"fromBlock": "0x0",
-				"toBlock":   "latest",
-				"topics":    [][]common.Hash{},
-			},
-			nil,
-		},
-		{
-			"with negative fromBlock and negative toBlock",
-			ethereum.FilterQuery{
-				Addresses: addresses,
-				FromBlock: big.NewInt(-1),
-				ToBlock:   big.NewInt(-1),
-				Topics:    [][]common.Hash{},
-			},
-			map[string]interface{}{
-				"address":   addresses,
-				"fromBlock": "pending",
-				"toBlock":   "pending",
-				"topics":    [][]common.Hash{},
-			},
-			nil,
-		},
-		{
-			"with blockhash",
-			ethereum.FilterQuery{
-				Addresses: addresses,
-				BlockHash: &blockHash,
-				Topics:    [][]common.Hash{},
-			},
-			map[string]interface{}{
-				"address":   addresses,
-				"blockHash": blockHash,
-				"topics":    [][]common.Hash{},
-			},
-			nil,
-		},
-		{
-			"with blockhash and from block",
-			ethereum.FilterQuery{
-				Addresses: addresses,
-				BlockHash: &blockHash,
-				FromBlock: big.NewInt(1),
-				Topics:    [][]common.Hash{},
-			},
-			nil,
-			blockHashErr,
-		},
-		{
-			"with blockhash and to block",
-			ethereum.FilterQuery{
-				Addresses: addresses,
-				BlockHash: &blockHash,
-				ToBlock:   big.NewInt(1),
-				Topics:    [][]common.Hash{},
-			},
-			nil,
-			blockHashErr,
-		},
-		{
-			"with blockhash and both from / to block",
-			ethereum.FilterQuery{
-				Addresses: addresses,
-				BlockHash: &blockHash,
-				FromBlock: big.NewInt(1),
-				ToBlock:   big.NewInt(2),
-				Topics:    [][]common.Hash{},
-			},
-			nil,
-			blockHashErr,
-		},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			output, err := toFilterArg(testCase.input)
-			if (testCase.err == nil) != (err == nil) {
-				t.Fatalf("expected error %v but got %v", testCase.err, err)
-			}
-			if testCase.err != nil {
-				if testCase.err.Error() != err.Error() {
-					t.Fatalf("expected error %v but got %v", testCase.err, err)
-				}
-			} else if !reflect.DeepEqual(testCase.output, output) {
-				t.Fatalf("expected filter arg %v but got %v", testCase.output, output)
-			}
-		})
-	}
-}
-
 var (
-	testKey, _  = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
-	testAddr    = crypto.PubkeyToAddress(testKey.PublicKey)
-	testBalance = big.NewInt(2e15)
+	testKey, _         = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	testAddr           = crypto.PubkeyToAddress(testKey.PublicKey)
+	testBalance        = big.NewInt(2e15)
+	revertContractAddr = common.HexToAddress("290f1b36649a61e369c6276f6d29463335b4400c")
+	revertCode         = common.FromHex("7f08c379a0000000000000000000000000000000000000000000000000000000006000526020600452600a6024527f75736572206572726f7200000000000000000000000000000000000000000000604452604e6000fd")
 )
 
 var genesis = &core.Genesis{
-	Config:    params.AllEthashProtocolChanges,
-	Alloc:     types.GenesisAlloc{testAddr: {Balance: testBalance}},
+	Config: params.AllDevChainProtocolChanges,
+	Alloc: types.GenesisAlloc{
+		testAddr:           {Balance: testBalance},
+		revertContractAddr: {Code: revertCode},
+	},
 	ExtraData: []byte("test genesis"),
 	Timestamp: 9000,
 	BaseFee:   big.NewInt(params.InitialBaseFee),
 }
 
 var genesisForHistorical = &core.Genesis{
-	Config:    params.OptimismTestConfig,
-	Alloc:     core.GenesisAlloc{testAddr: {Balance: testBalance}},
+	Config:    params.OptimismTestCliqueConfig,
+	Alloc:     types.GenesisAlloc{testAddr: {Balance: testBalance}},
 	ExtraData: []byte("test genesis"),
 	Timestamp: 9000,
 	BaseFee:   big.NewInt(params.InitialBaseFee),
@@ -234,7 +115,7 @@ var testTx2 = types.MustSignNewTx(testKey, types.LatestSigner(genesis.Config), &
 
 type mockHistoricalBackend struct{}
 
-func (m *mockHistoricalBackend) Call(ctx context.Context, args ethapi.TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *ethapi.StateOverride) (hexutil.Bytes, error) {
+func (m *mockHistoricalBackend) Call(ctx context.Context, args ethapi.TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *override.StateOverride) (hexutil.Bytes, error) {
 	num, ok := blockNrOrHash.Number()
 	if ok && num == 1 {
 		return hexutil.Bytes("test"), nil
@@ -285,49 +166,56 @@ func newMockHistoricalBackend(t *testing.T) string {
 	return fmt.Sprintf("http://%s", listener.Addr().String())
 }
 
-func newTestBackend(t *testing.T, enableHistoricalState bool) (*node.Node, []*types.Block) {
-	histAddr := newMockHistoricalBackend(t)
-
-	var consensusEngine consensus.Engine
+func newTestBackend(t *testing.T, config *node.Config, enableHistoricalState bool) (*node.Node, []*types.Block, error) {
 	var actualGenesis *core.Genesis
 	var chainLength int
 	if enableHistoricalState {
 		actualGenesis = genesisForHistorical
-		consensusEngine = beacon.New(ethash.NewFaker())
 		chainLength = 10
 	} else {
 		actualGenesis = genesis
-		consensusEngine = ethash.NewFaker()
 		chainLength = 2
 	}
 
-	// Generate test chain
-	blocks := generateTestChain(consensusEngine, actualGenesis, chainLength)
+	// Generate test chain.
+	blocks := generateTestChain(actualGenesis, chainLength)
 
 	// Create node
-	n, err := node.New(&node.Config{})
+	if config == nil {
+		config = new(node.Config)
+	}
+	n, err := node.New(config)
 	if err != nil {
-		t.Fatalf("can't create new node: %v", err)
+		return nil, nil, fmt.Errorf("can't create new node: %v", err)
 	}
 	// Create Ethereum Service
-	config := &ethconfig.Config{Genesis: actualGenesis}
+	ecfg := &ethconfig.Config{Genesis: actualGenesis, RPCGasCap: 1000000}
 	if enableHistoricalState {
-		config.RollupHistoricalRPC = histAddr
-		config.RollupHistoricalRPCTimeout = time.Second * 5
+		histAddr := newMockHistoricalBackend(t)
+		ecfg.RollupHistoricalRPC = histAddr
+		ecfg.RollupHistoricalRPCTimeout = time.Second * 5
 	}
-	ethservice, err := eth.New(n, config)
+	ethservice, err := eth.New(n, ecfg)
 	if err != nil {
-		t.Fatalf("can't create new ethereum service: %v", err)
+		return nil, nil, fmt.Errorf("can't create new ethereum service: %v", err)
 	}
+
+	// Ensure tx pool starts the background operation
+	txPool := ethservice.TxPool()
+	if err = txPool.Sync(); err != nil {
+		return nil, nil, fmt.Errorf("can't sync transaction pool: %v", err)
+	}
+
 	if enableHistoricalState { // swap to the pre-bedrock consensus-engine that we used to generate the historical blocks
 		ethservice.BlockChain().Engine().(*beacon.Beacon).SwapInner(ethash.NewFaker())
 	}
+
 	// Import the test chain.
 	if err := n.Start(); err != nil {
-		t.Fatalf("can't start test node: %v", err)
+		return nil, nil, fmt.Errorf("can't start test node: %v", err)
 	}
 	if _, err := ethservice.BlockChain().InsertChain(blocks[1:]); err != nil {
-		t.Fatalf("can't import test blocks: %v", err)
+		return nil, nil, fmt.Errorf("can't import test blocks: %v", err)
 	}
 
 	// Ensure the tx indexing is fully generated
@@ -344,10 +232,10 @@ func newTestBackend(t *testing.T, enableHistoricalState bool) (*node.Node, []*ty
 		ethservice.Engine().(*beacon.Beacon).SwapInner(&beacon.OpLegacy{})
 	}
 
-	return n, blocks
+	return n, blocks, nil
 }
 
-func generateTestChain(consensusEngine consensus.Engine, genesis *core.Genesis, length int) []*types.Block {
+func generateTestChain(genesis *core.Genesis, length int) []*types.Block {
 	generate := func(i int, g *core.BlockGen) {
 		g.OffsetTime(5)
 		g.SetExtra([]byte("test"))
@@ -360,12 +248,15 @@ func generateTestChain(consensusEngine consensus.Engine, genesis *core.Genesis, 
 			g.AddTx(testTx2)
 		}
 	}
-	_, blocks, _ := core.GenerateChainWithGenesis(genesis, consensusEngine, length, generate)
+	_, blocks, _ := core.GenerateChainWithGenesis(genesis, beacon.New(ethash.NewFaker()), length, generate)
 	return append([]*types.Block{genesis.ToBlock()}, blocks...)
 }
 
 func TestEthClientHistoricalBackend(t *testing.T) {
-	backend, _ := newTestBackend(t, true)
+	backend, _, err := newTestBackend(t, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	client := backend.Attach()
 	defer backend.Close()
 	defer client.Close()
@@ -374,7 +265,11 @@ func TestEthClientHistoricalBackend(t *testing.T) {
 }
 
 func TestEthClient(t *testing.T) {
-	backend, chain := newTestBackend(t, false)
+	backend, chain, err := newTestBackend(t, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	client := backend.Attach()
 	defer backend.Close()
 	defer client.Close()
@@ -445,7 +340,7 @@ func testHeader(t *testing.T, chain []*types.Block, client *rpc.Client) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			ec := NewClient(client)
+			ec := ethclient.NewClient(client)
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
 
@@ -456,7 +351,7 @@ func testHeader(t *testing.T, chain []*types.Block, client *rpc.Client) {
 			if got != nil && got.Number != nil && got.Number.Sign() == 0 {
 				got.Number = big.NewInt(0) // hack to make DeepEqual work
 			}
-			if !reflect.DeepEqual(got, tt.want) {
+			if got.Hash() != tt.want.Hash() {
 				t.Fatalf("HeaderByNumber(%v) got = %v, want %v", tt.block, got, tt.want)
 			}
 		})
@@ -494,7 +389,7 @@ func testBalanceAt(t *testing.T, client *rpc.Client) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			ec := NewClient(client)
+			ec := ethclient.NewClient(client)
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
 
@@ -510,7 +405,7 @@ func testBalanceAt(t *testing.T, client *rpc.Client) {
 }
 
 func testTransactionInBlock(t *testing.T, client *rpc.Client) {
-	ec := NewClient(client)
+	ec := ethclient.NewClient(client)
 
 	// Get current block by number.
 	block, err := ec.BlockByNumber(context.Background(), nil)
@@ -539,21 +434,27 @@ func testTransactionInBlock(t *testing.T, client *rpc.Client) {
 	if tx.Hash() != testTx2.Hash() {
 		t.Fatalf("unexpected transaction: %v", tx)
 	}
+
+	// Test pending block
+	_, err = ec.BlockByNumber(context.Background(), big.NewInt(int64(rpc.PendingBlockNumber)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func testChainID(t *testing.T, client *rpc.Client) {
-	ec := NewClient(client)
+	ec := ethclient.NewClient(client)
 	id, err := ec.ChainID(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if id == nil || id.Cmp(params.AllEthashProtocolChanges.ChainID) != 0 {
+	if id == nil || id.Cmp(params.AllDevChainProtocolChanges.ChainID) != 0 {
 		t.Fatalf("ChainID returned wrong number: %+v", id)
 	}
 }
 
 func testGetBlock(t *testing.T, client *rpc.Client) {
-	ec := NewClient(client)
+	ec := ethclient.NewClient(client)
 
 	// Get current block number
 	blockNumber, err := ec.BlockNumber(context.Background())
@@ -598,7 +499,7 @@ func testGetBlock(t *testing.T, client *rpc.Client) {
 }
 
 func testStatusFunctions(t *testing.T, client *rpc.Client) {
-	ec := NewClient(client)
+	ec := ethclient.NewClient(client)
 
 	// Sync progress
 	progress, err := ec.SyncProgress(context.Background())
@@ -636,6 +537,15 @@ func testStatusFunctions(t *testing.T, client *rpc.Client) {
 		t.Fatalf("unexpected gas tip cap: %v", gasTipCap)
 	}
 
+	// BlobBaseFee
+	blobBaseFee, err := ec.BlobBaseFee(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if blobBaseFee.Cmp(big.NewInt(1)) != 0 {
+		t.Fatalf("unexpected blob base fee: %v", blobBaseFee)
+	}
+
 	// FeeHistory
 	history, err := ec.FeeHistory(context.Background(), 1, big.NewInt(2), []float64{95, 99})
 	if err != nil {
@@ -661,7 +571,7 @@ func testStatusFunctions(t *testing.T, client *rpc.Client) {
 }
 
 func testCallContractAtHash(t *testing.T, client *rpc.Client) {
-	ec := NewClient(client)
+	ec := ethclient.NewClient(client)
 
 	// EstimateGas
 	msg := ethereum.CallMsg{
@@ -688,7 +598,7 @@ func testCallContractAtHash(t *testing.T, client *rpc.Client) {
 }
 
 func testCallContract(t *testing.T, client *rpc.Client) {
-	ec := NewClient(client)
+	ec := ethclient.NewClient(client)
 
 	// EstimateGas
 	msg := ethereum.CallMsg{
@@ -715,7 +625,7 @@ func testCallContract(t *testing.T, client *rpc.Client) {
 }
 
 func testAtFunctions(t *testing.T, client *rpc.Client) {
-	ec := NewClient(client)
+	ec := ethclient.NewClient(client)
 
 	block, err := ec.HeaderByNumber(context.Background(), big.NewInt(1))
 	if err != nil {
@@ -723,17 +633,23 @@ func testAtFunctions(t *testing.T, client *rpc.Client) {
 	}
 
 	// send a transaction for some interesting pending status
-	sendTransaction(ec)
-	time.Sleep(100 * time.Millisecond)
-
-	// Check pending transaction count
-	pending, err := ec.PendingTransactionCount(context.Background())
-	if err != nil {
+	if err := sendTransaction(ec); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if pending != 1 {
-		t.Fatalf("unexpected pending, wanted 1 got: %v", pending)
+
+	// wait for the transaction to be included in the pending block
+	for {
+		// Check pending transaction count
+		pending, err := ec.PendingTransactionCount(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if pending == 1 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
+
 	// Query balance
 	balance, err := ec.BalanceAt(context.Background(), testAddr, nil)
 	if err != nil {
@@ -810,10 +726,52 @@ func testAtFunctions(t *testing.T, client *rpc.Client) {
 	if !bytes.Equal(code, penCode) {
 		t.Fatalf("unexpected code: %v %v", code, penCode)
 	}
+	// Use HeaderByNumber to get a header for EstimateGasAtBlock and EstimateGasAtBlockHash
+	latestHeader, err := ec.HeaderByNumber(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// EstimateGasAtBlock
+	msg := ethereum.CallMsg{
+		From:  testAddr,
+		To:    &common.Address{},
+		Gas:   21000,
+		Value: big.NewInt(1),
+	}
+	gas, err := ec.EstimateGasAtBlock(context.Background(), msg, latestHeader.Number)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gas != 21000 {
+		t.Fatalf("unexpected gas limit: %v", gas)
+	}
+	// EstimateGasAtBlockHash
+	gas, err = ec.EstimateGasAtBlockHash(context.Background(), msg, latestHeader.Hash())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gas != 21000 {
+		t.Fatalf("unexpected gas limit: %v", gas)
+	}
+
+	// Verify that sender address of pending transaction is saved in cache.
+	pendingBlock, err := ec.BlockByNumber(context.Background(), big.NewInt(int64(rpc.PendingBlockNumber)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// No additional RPC should be required, ensure the server is not asked by
+	// canceling the context.
+	sender, err := ec.TransactionSender(newCanceledContext(), pendingBlock.Transactions()[0], pendingBlock.Hash(), 0)
+	if err != nil {
+		t.Fatal("unable to recover sender:", err)
+	}
+	if sender != testAddr {
+		t.Fatal("wrong sender:", sender)
+	}
 }
 
 func testTransactionSender(t *testing.T, client *rpc.Client) {
-	ec := NewClient(client)
+	ec := ethclient.NewClient(client)
 	ctx := context.Background()
 
 	// Retrieve testTx1 via RPC.
@@ -831,10 +789,7 @@ func testTransactionSender(t *testing.T, client *rpc.Client) {
 
 	// The sender address is cached in tx1, so no additional RPC should be required in
 	// TransactionSender. Ensure the server is not asked by canceling the context here.
-	canceledCtx, cancel := context.WithCancel(context.Background())
-	cancel()
-	<-canceledCtx.Done() // Ensure the close of the Done channel
-	sender1, err := ec.TransactionSender(canceledCtx, tx1, block2.Hash(), 0)
+	sender1, err := ec.TransactionSender(newCanceledContext(), tx1, block2.Hash(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -854,7 +809,7 @@ func testTransactionSender(t *testing.T, client *rpc.Client) {
 }
 
 func testEstimateGas(t *testing.T, client *rpc.Client) {
-	ec := NewClient(client)
+	ec := ethclient.NewClient(client)
 
 	// EstimateGas
 	msg := ethereum.CallMsg{
@@ -873,7 +828,7 @@ func testEstimateGas(t *testing.T, client *rpc.Client) {
 }
 
 func testHistoricalRPC(t *testing.T, client *rpc.Client) {
-	ec := NewClient(client)
+	ec := ethclient.NewClient(client)
 
 	// Estimate Gas RPC
 	msg := ethereum.CallMsg{
@@ -883,7 +838,13 @@ func testHistoricalRPC(t *testing.T, client *rpc.Client) {
 		Value: big.NewInt(1),
 	}
 	var res hexutil.Uint64
-	err := client.CallContext(context.Background(), &res, "eth_estimateGas", toCallArg(msg), rpc.BlockNumberOrHashWithNumber(1))
+	callMsg := map[string]interface{}{
+		"from":  msg.From,
+		"to":    msg.To,
+		"gas":   hexutil.Uint64(msg.Gas),
+		"value": (*hexutil.Big)(msg.Value),
+	}
+	err := client.CallContext(context.Background(), &res, "eth_estimateGas", callMsg, rpc.BlockNumberOrHashWithNumber(1))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -901,12 +862,19 @@ func testHistoricalRPC(t *testing.T, client *rpc.Client) {
 	}
 }
 
-func sendTransaction(ec *Client) error {
+func newCanceledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	<-ctx.Done() // Ensure the close of the Done channel
+	return ctx
+}
+
+func sendTransaction(ec *ethclient.Client) error {
 	chainID, err := ec.ChainID(context.Background())
 	if err != nil {
 		return err
 	}
-	nonce, err := ec.PendingNonceAt(context.Background(), testAddr)
+	nonce, err := ec.NonceAt(context.Background(), testAddr, nil)
 	if err != nil {
 		return err
 	}
@@ -923,4 +891,41 @@ func sendTransaction(ec *Client) error {
 		return err
 	}
 	return ec.SendTransaction(context.Background(), tx)
+}
+
+// Here we show how to get the error message of reverted contract call.
+func ExampleRevertErrorData() {
+	// First create an ethclient.Client instance.
+	ctx := context.Background()
+	ec, _ := ethclient.DialContext(ctx, exampleNode.HTTPEndpoint())
+
+	// Call the contract.
+	// Note we expect the call to return an error.
+	contract := common.HexToAddress("290f1b36649a61e369c6276f6d29463335b4400c")
+	call := ethereum.CallMsg{To: &contract, Gas: 30000}
+	result, err := ec.CallContract(ctx, call, nil)
+	if len(result) > 0 {
+		panic("got result")
+	}
+	if err == nil {
+		panic("call did not return error")
+	}
+
+	// Extract the low-level revert data from the error.
+	revertData, ok := ethclient.RevertErrorData(err)
+	if !ok {
+		panic("unpacking revert failed")
+	}
+	fmt.Printf("revert: %x\n", revertData)
+
+	// Parse the revert data to obtain the error message.
+	message, err := abi.UnpackRevert(revertData)
+	if err != nil {
+		panic("parsing ABI error failed: " + err.Error())
+	}
+	fmt.Println("message:", message)
+
+	// Output:
+	// revert: 08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000a75736572206572726f72
+	// message: user error
 }

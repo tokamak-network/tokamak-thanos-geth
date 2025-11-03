@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"math/big"
 	"math/rand"
 	"os"
@@ -27,7 +28,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -260,29 +260,6 @@ func TestBadBlockStorage(t *testing.T) {
 	}
 }
 
-// Tests block total difficulty storage and retrieval operations.
-func TestTdStorage(t *testing.T) {
-	db := NewMemoryDatabase()
-
-	// Create a test TD to move around the database and make sure it's really new
-	hash, td := common.Hash{}, big.NewInt(314)
-	if entry := ReadTd(db, hash, 0); entry != nil {
-		t.Fatalf("Non existent TD returned: %v", entry)
-	}
-	// Write and verify the TD in the database
-	WriteTd(db, hash, 0, td)
-	if entry := ReadTd(db, hash, 0); entry == nil {
-		t.Fatalf("Stored TD not found")
-	} else if entry.Cmp(td) != 0 {
-		t.Fatalf("Retrieved TD mismatch: have %v, want %v", entry, td)
-	}
-	// Delete the TD and verify the execution
-	DeleteTd(db, hash, 0)
-	if entry := ReadTd(db, hash, 0); entry != nil {
-		t.Fatalf("Deleted TD returned: %v", entry)
-	}
-}
-
 // Tests that canonical numbers can be mapped to hashes and retrieved.
 func TestCanonicalMappingStorage(t *testing.T) {
 	db := NewMemoryDatabase()
@@ -366,7 +343,7 @@ func TestBlockReceiptStorage(t *testing.T) {
 		ContractAddress: common.BytesToAddress([]byte{0x01, 0x11, 0x11}),
 		GasUsed:         111111,
 	}
-	receipt1.Bloom = types.CreateBloom(types.Receipts{receipt1})
+	receipt1.Bloom = types.CreateBloom(receipt1)
 
 	receipt2 := &types.Receipt{
 		PostState:         common.Hash{2}.Bytes(),
@@ -379,7 +356,7 @@ func TestBlockReceiptStorage(t *testing.T) {
 		ContractAddress: common.BytesToAddress([]byte{0x02, 0x22, 0x22}),
 		GasUsed:         222222,
 	}
-	receipt2.Bloom = types.CreateBloom(types.Receipts{receipt2})
+	receipt2.Bloom = types.CreateBloom(receipt2)
 	receipts := []*types.Receipt{receipt1, receipt2}
 
 	// Check that no receipt entries are in a pristine database
@@ -396,10 +373,10 @@ func TestBlockReceiptStorage(t *testing.T) {
 	// Insert the receipt slice into the database and check presence
 	WriteReceipts(db, hash, 0, receipts)
 	if rs := ReadReceipts(db, hash, 0, 0, params.TestChainConfig); len(rs) == 0 {
-		t.Fatalf("no receipts returned")
+		t.Fatal("no receipts returned")
 	} else {
 		if err := checkReceiptsRLP(rs, receipts); err != nil {
-			t.Fatalf(err.Error())
+			t.Fatal(err)
 		}
 	}
 	// Delete the body and ensure that the receipts are no longer returned (metadata can't be recomputed)
@@ -408,8 +385,12 @@ func TestBlockReceiptStorage(t *testing.T) {
 		t.Fatalf("receipts returned when body was deleted: %v", rs)
 	}
 	// Ensure that receipts without metadata can be returned without the block body too
-	if err := checkReceiptsRLP(ReadRawReceipts(db, hash, 0), receipts); err != nil {
-		t.Fatalf(err.Error())
+	raw := ReadRawReceipts(db, hash, 0)
+	for _, r := range raw {
+		r.Bloom = types.CreateBloom(r)
+	}
+	if err := checkReceiptsRLP(raw, receipts); err != nil {
+		t.Fatal(err)
 	}
 	// Sanity check that body alone without the receipt is a full purge
 	WriteBody(db, hash, 0, body)
@@ -443,7 +424,7 @@ func checkReceiptsRLP(have, want types.Receipts) error {
 func TestAncientStorage(t *testing.T) {
 	// Freezer style fast import the chain.
 	frdir := t.TempDir()
-	db, err := NewDatabaseWithFreezer(NewMemoryDatabase(), frdir, "", false)
+	db, err := Open(NewMemoryDatabase(), OpenOptions{Ancient: frdir})
 	if err != nil {
 		t.Fatalf("failed to create database with ancient backend")
 	}
@@ -468,12 +449,12 @@ func TestAncientStorage(t *testing.T) {
 	if blob := ReadReceiptsRLP(db, hash, number); len(blob) > 0 {
 		t.Fatalf("non existent receipts returned")
 	}
-	if blob := ReadTdRLP(db, hash, number); len(blob) > 0 {
-		t.Fatalf("non existent td returned")
+	if blob := ReadCanonicalReceiptsRLP(db, number, &hash); len(blob) > 0 {
+		t.Fatalf("non existent receipts returned")
 	}
 
 	// Write and verify the header in the database
-	WriteAncientBlocks(db, []*types.Block{block}, []types.Receipts{nil}, big.NewInt(100))
+	WriteAncientBlocks(db, []*types.Block{block}, types.EncodeBlockReceiptLists([]types.Receipts{nil}))
 
 	if blob := ReadHeaderRLP(db, hash, number); len(blob) == 0 {
 		t.Fatalf("no header returned")
@@ -484,8 +465,8 @@ func TestAncientStorage(t *testing.T) {
 	if blob := ReadReceiptsRLP(db, hash, number); len(blob) == 0 {
 		t.Fatalf("no receipts returned")
 	}
-	if blob := ReadTdRLP(db, hash, number); len(blob) == 0 {
-		t.Fatalf("no td returned")
+	if blob := ReadCanonicalReceiptsRLP(db, number, &hash); len(blob) == 0 {
+		t.Fatalf("no receipts returned")
 	}
 
 	// Use a fake hash for data retrieval, nothing should be returned.
@@ -499,8 +480,47 @@ func TestAncientStorage(t *testing.T) {
 	if blob := ReadReceiptsRLP(db, fakeHash, number); len(blob) != 0 {
 		t.Fatalf("invalid receipts returned")
 	}
-	if blob := ReadTdRLP(db, fakeHash, number); len(blob) != 0 {
-		t.Fatalf("invalid td returned")
+}
+
+func TestWriteAncientHeaderChain(t *testing.T) {
+	db, err := Open(NewMemoryDatabase(), OpenOptions{Ancient: t.TempDir()})
+	if err != nil {
+		t.Fatalf("failed to create database with ancient backend")
+	}
+	defer db.Close()
+
+	// Create a test block
+	var headers []*types.Header
+	headers = append(headers, &types.Header{
+		Number:      big.NewInt(0),
+		Extra:       []byte("test block"),
+		UncleHash:   types.EmptyUncleHash,
+		TxHash:      types.EmptyTxsHash,
+		ReceiptHash: types.EmptyReceiptsHash,
+	})
+	headers = append(headers, &types.Header{
+		Number:      big.NewInt(1),
+		Extra:       []byte("test block"),
+		UncleHash:   types.EmptyUncleHash,
+		TxHash:      types.EmptyTxsHash,
+		ReceiptHash: types.EmptyReceiptsHash,
+	})
+	// Write and verify the header in the database
+	WriteAncientHeaderChain(db, headers)
+
+	for _, header := range headers {
+		if blob := ReadHeaderRLP(db, header.Hash(), header.Number.Uint64()); len(blob) == 0 {
+			t.Fatalf("no header returned")
+		}
+		if h := ReadCanonicalHash(db, header.Number.Uint64()); h != header.Hash() {
+			t.Fatalf("no canonical hash returned")
+		}
+		if blob := ReadBodyRLP(db, header.Hash(), header.Number.Uint64()); len(blob) != 0 {
+			t.Fatalf("unexpected body returned")
+		}
+		if blob := ReadReceiptsRLP(db, header.Hash(), header.Number.Uint64()); len(blob) != 0 {
+			t.Fatalf("unexpected body returned")
+		}
 	}
 }
 
@@ -526,7 +546,6 @@ func TestCanonicalHashIteration(t *testing.T) {
 	// Fill database with testing data.
 	for i := uint64(1); i <= 8; i++ {
 		WriteCanonicalHash(db, common.Hash{}, i)
-		WriteTd(db, common.Hash{}, i, big.NewInt(10)) // Write some interferential data
 	}
 	for i, c := range cases {
 		numbers, _ := ReadAllCanonicalHashes(db, c.from, c.to, c.limit)
@@ -581,7 +600,7 @@ func TestHashesInRange(t *testing.T) {
 func BenchmarkWriteAncientBlocks(b *testing.B) {
 	// Open freezer database.
 	frdir := b.TempDir()
-	db, err := NewDatabaseWithFreezer(NewMemoryDatabase(), frdir, "", false)
+	db, err := Open(NewMemoryDatabase(), OpenOptions{Ancient: frdir})
 	if err != nil {
 		b.Fatalf("failed to create database with ancient backend")
 	}
@@ -599,7 +618,6 @@ func BenchmarkWriteAncientBlocks(b *testing.B) {
 	// The benchmark loop writes batches of blocks, but note that the total block count is
 	// b.N. This means the resulting ns/op measurement is the time it takes to write a
 	// single block and its associated data.
-	var td = big.NewInt(55)
 	var totalSize int64
 	for i := 0; i < b.N; i += batchSize {
 		length := batchSize
@@ -609,7 +627,7 @@ func BenchmarkWriteAncientBlocks(b *testing.B) {
 
 		blocks := allBlocks[i : i+length]
 		receipts := batchReceipts[:length]
-		writeSize, err := WriteAncientBlocks(db, blocks, receipts, td)
+		writeSize, err := WriteAncientBlocks(db, blocks, types.EncodeBlockReceiptLists(receipts))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -648,7 +666,7 @@ func makeTestBlocks(nblock int, txsPerBlock int) []*types.Block {
 			Number: big.NewInt(int64(i)),
 			Extra:  []byte("test block"),
 		}
-		blocks[i] = types.NewBlockWithHeader(header).WithBody(txs, nil)
+		blocks[i] = types.NewBlockWithHeader(header).WithBody(types.Body{Transactions: txs})
 		blocks[i].Hash() // pre-cache the block hash
 	}
 	return blocks
@@ -657,11 +675,15 @@ func makeTestBlocks(nblock int, txsPerBlock int) []*types.Block {
 // makeTestReceipts creates fake receipts for the ancient write benchmark.
 func makeTestReceipts(n int, nPerBlock int) []types.Receipts {
 	receipts := make([]*types.Receipt, nPerBlock)
+	var logs []*types.Log
+	for i := 0; i < 5; i++ {
+		logs = append(logs, new(types.Log))
+	}
 	for i := 0; i < len(receipts); i++ {
 		receipts[i] = &types.Receipt{
 			Status:            types.ReceiptStatusSuccessful,
 			CumulativeGasUsed: 0x888888888,
-			Logs:              make([]*types.Log, 5),
+			Logs:              logs,
 		}
 	}
 	allReceipts := make([]types.Receipts, n)
@@ -672,26 +694,28 @@ func makeTestReceipts(n int, nPerBlock int) []types.Receipts {
 }
 
 type fullLogRLP struct {
-	Address     common.Address
-	Topics      []common.Hash
-	Data        []byte
-	BlockNumber uint64
-	TxHash      common.Hash
-	TxIndex     uint
-	BlockHash   common.Hash
-	Index       uint
+	Address        common.Address
+	Topics         []common.Hash
+	Data           []byte
+	BlockNumber    uint64
+	BlockTimestamp uint64
+	TxHash         common.Hash
+	TxIndex        uint
+	BlockHash      common.Hash
+	Index          uint
 }
 
 func newFullLogRLP(l *types.Log) *fullLogRLP {
 	return &fullLogRLP{
-		Address:     l.Address,
-		Topics:      l.Topics,
-		Data:        l.Data,
-		BlockNumber: l.BlockNumber,
-		TxHash:      l.TxHash,
-		TxIndex:     l.TxIndex,
-		BlockHash:   l.BlockHash,
-		Index:       l.Index,
+		Address:        l.Address,
+		Topics:         l.Topics,
+		Data:           l.Data,
+		BlockNumber:    l.BlockNumber,
+		BlockTimestamp: l.BlockTimestamp,
+		TxHash:         l.TxHash,
+		TxIndex:        l.TxIndex,
+		BlockHash:      l.BlockHash,
+		Index:          l.Index,
 	}
 }
 
@@ -721,7 +745,7 @@ func TestReadLogs(t *testing.T) {
 		DepositNonce:          &depositNonce,
 		DepositReceiptVersion: nil,
 	}
-	depositReceipt.Bloom = types.CreateBloom(types.Receipts{&depositReceipt})
+	depositReceipt.Bloom = types.CreateBloom(&depositReceipt)
 
 	receiptVersion := types.CanyonDepositReceiptVersion
 	versionedDepositReceipt := types.Receipt{
@@ -737,7 +761,7 @@ func TestReadLogs(t *testing.T) {
 		DepositNonce:          &depositNonce,
 		DepositReceiptVersion: &receiptVersion,
 	}
-	versionedDepositReceipt.Bloom = types.CreateBloom(types.Receipts{&versionedDepositReceipt})
+	versionedDepositReceipt.Bloom = types.CreateBloom(&versionedDepositReceipt)
 
 	receipt := types.Receipt{
 		PostState:         common.Hash{3}.Bytes(),
@@ -750,7 +774,7 @@ func TestReadLogs(t *testing.T) {
 		ContractAddress: common.BytesToAddress([]byte{0x03, 0x33, 0x33}),
 		GasUsed:         333333,
 	}
-	receipt.Bloom = types.CreateBloom(types.Receipts{&receipt})
+	receipt.Bloom = types.CreateBloom(&receipt)
 	receipts := []*types.Receipt{&receipt, &depositReceipt, &versionedDepositReceipt}
 
 	hash := common.BytesToHash([]byte{0x03, 0x14})
@@ -851,7 +875,7 @@ func TestDeriveLogFields(t *testing.T) {
 		}),
 	}
 	// Create the corresponding receipts
-	receipts := []*receiptLogs{
+	receipts := []*types.Receipt{
 		{
 			Logs: []*types.Log{
 				{Address: common.BytesToAddress([]byte{0x11})},
@@ -875,9 +899,7 @@ func TestDeriveLogFields(t *testing.T) {
 	// Derive log metadata fields
 	number := big.NewInt(1)
 	hash := common.BytesToHash([]byte{0x03, 0x14})
-	if err := deriveLogFields(receipts, hash, number.Uint64(), txs); err != nil {
-		t.Fatal(err)
-	}
+	types.Receipts(receipts).DeriveFields(params.TestChainConfig, hash, number.Uint64(), 12, big.NewInt(0), big.NewInt(0), txs)
 
 	// Iterate over all the computed fields and check that they're correct
 	logIndex := uint(0)
@@ -888,6 +910,9 @@ func TestDeriveLogFields(t *testing.T) {
 			}
 			if receipts[i].Logs[j].BlockHash != hash {
 				t.Errorf("receipts[%d].Logs[%d].BlockHash = %s, want %s", i, j, receipts[i].Logs[j].BlockHash.String(), hash.String())
+			}
+			if receipts[i].Logs[j].BlockTimestamp != 12 {
+				t.Errorf("receipts[%d].Logs[%d].BlockTimestamp = %d, want %d", i, j, receipts[i].Logs[j].BlockTimestamp, 12)
 			}
 			if receipts[i].Logs[j].TxHash != txs[i].Hash() {
 				t.Errorf("receipts[%d].Logs[%d].TxHash = %s, want %s", i, j, receipts[i].Logs[j].TxHash.String(), txs[i].Hash().String())
@@ -933,11 +958,12 @@ func TestHeadersRLPStorage(t *testing.T) {
 	// Have N headers in the freezer
 	frdir := t.TempDir()
 
-	db, err := NewDatabaseWithFreezer(NewMemoryDatabase(), frdir, "", false)
+	db, err := Open(NewMemoryDatabase(), OpenOptions{Ancient: frdir})
 	if err != nil {
 		t.Fatalf("failed to create database with ancient backend")
 	}
 	defer db.Close()
+
 	// Create blocks
 	var chain []*types.Block
 	var pHash common.Hash
@@ -953,9 +979,9 @@ func TestHeadersRLPStorage(t *testing.T) {
 		chain = append(chain, block)
 		pHash = block.Hash()
 	}
-	var receipts []types.Receipts = make([]types.Receipts, 100)
+	receipts := make([]types.Receipts, 100)
 	// Write first half to ancients
-	WriteAncientBlocks(db, chain[:50], receipts[:50], big.NewInt(100))
+	WriteAncientBlocks(db, chain[:50], types.EncodeBlockReceiptLists(receipts[:50]))
 	// Write second half to db
 	for i := 50; i < 100; i++ {
 		WriteCanonicalHash(db, chain[i].Hash(), chain[i].NumberU64())

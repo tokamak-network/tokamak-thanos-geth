@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/core/vm"
 )
 
 type OpLegacy struct{}
@@ -60,11 +60,11 @@ func (o *OpLegacy) Prepare(chain consensus.ChainHeaderReader, header *types.Head
 	return fmt.Errorf("cannot prepare for legacy block header: %s (num %d)", header.Hash(), header.Number)
 }
 
-func (o *OpLegacy) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
+func (o *OpLegacy) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) {
 	panic(fmt.Errorf("cannot finalize legacy block header: %s (num %d)", header.Hash(), header.Number))
 }
 
-func (o *OpLegacy) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
+func (o *OpLegacy) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
 	return nil, fmt.Errorf("cannot finalize and assemble for legacy block header: %s (num %d)", header.Hash(), header.Number)
 }
 
@@ -78,10 +78,6 @@ func (o *OpLegacy) SealHash(header *types.Header) common.Hash {
 
 func (o *OpLegacy) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, parent *types.Header) *big.Int {
 	return big.NewInt(0)
-}
-
-func (o *OpLegacy) APIs(chain consensus.ChainHeaderReader) []rpc.API {
-	return nil
 }
 
 func (o *OpLegacy) Close() error {

@@ -24,8 +24,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
@@ -56,7 +58,7 @@ func (api *DebugAPI) DumpBlock(blockNr rpc.BlockNumber) (state.Dump, error) {
 		// If we're dumping the pending state, we need to request
 		// both the pending block as well as the pending state from
 		// the miner and operate on those
-		_, stateDb := api.eth.miner.Pending()
+		_, _, stateDb := api.eth.miner.Pending()
 		if stateDb == nil {
 			return state.Dump{}, errors.New("pending state is not available")
 		}
@@ -145,7 +147,7 @@ func (api *DebugAPI) AccountRange(blockNrOrHash rpc.BlockNumberOrHash, start hex
 			// If we're dumping the pending state, we need to request
 			// both the pending block as well as the pending state from
 			// the miner and operate on those
-			_, stateDb = api.eth.miner.Pending()
+			_, _, stateDb = api.eth.miner.Pending()
 			if stateDb == nil {
 				return state.Dump{}, errors.New("pending state is not available")
 			}
@@ -274,26 +276,26 @@ func storageRangeAt(statedb *state.StateDB, root common.Hash, address common.Add
 //
 // With one parameter, returns the list of accounts modified in the specified block.
 func (api *DebugAPI) GetModifiedAccountsByNumber(startNum uint64, endNum *uint64) ([]common.Address, error) {
-	var startBlock, endBlock *types.Block
+	var startHeader, endHeader *types.Header
 
-	startBlock = api.eth.blockchain.GetBlockByNumber(startNum)
-	if startBlock == nil {
+	startHeader = api.eth.blockchain.GetHeaderByNumber(startNum)
+	if startHeader == nil {
 		return nil, fmt.Errorf("start block %x not found", startNum)
 	}
 
 	if endNum == nil {
-		endBlock = startBlock
-		startBlock = api.eth.blockchain.GetBlockByHash(startBlock.ParentHash())
-		if startBlock == nil {
-			return nil, fmt.Errorf("block %x has no parent", endBlock.Number())
+		endHeader = startHeader
+		startHeader = api.eth.blockchain.GetHeaderByHash(startHeader.ParentHash)
+		if startHeader == nil {
+			return nil, fmt.Errorf("block %x has no parent", endHeader.Number)
 		}
 	} else {
-		endBlock = api.eth.blockchain.GetBlockByNumber(*endNum)
-		if endBlock == nil {
+		endHeader = api.eth.blockchain.GetHeaderByNumber(*endNum)
+		if endHeader == nil {
 			return nil, fmt.Errorf("end block %d not found", *endNum)
 		}
 	}
-	return api.getModifiedAccounts(startBlock, endBlock)
+	return api.getModifiedAccounts(startHeader, endHeader)
 }
 
 // GetModifiedAccountsByHash returns all accounts that have changed between the
@@ -302,38 +304,38 @@ func (api *DebugAPI) GetModifiedAccountsByNumber(startNum uint64, endNum *uint64
 //
 // With one parameter, returns the list of accounts modified in the specified block.
 func (api *DebugAPI) GetModifiedAccountsByHash(startHash common.Hash, endHash *common.Hash) ([]common.Address, error) {
-	var startBlock, endBlock *types.Block
-	startBlock = api.eth.blockchain.GetBlockByHash(startHash)
-	if startBlock == nil {
+	var startHeader, endHeader *types.Header
+	startHeader = api.eth.blockchain.GetHeaderByHash(startHash)
+	if startHeader == nil {
 		return nil, fmt.Errorf("start block %x not found", startHash)
 	}
 
 	if endHash == nil {
-		endBlock = startBlock
-		startBlock = api.eth.blockchain.GetBlockByHash(startBlock.ParentHash())
-		if startBlock == nil {
-			return nil, fmt.Errorf("block %x has no parent", endBlock.Number())
+		endHeader = startHeader
+		startHeader = api.eth.blockchain.GetHeaderByHash(startHeader.ParentHash)
+		if startHeader == nil {
+			return nil, fmt.Errorf("block %x has no parent", endHeader.Number)
 		}
 	} else {
-		endBlock = api.eth.blockchain.GetBlockByHash(*endHash)
-		if endBlock == nil {
+		endHeader = api.eth.blockchain.GetHeaderByHash(*endHash)
+		if endHeader == nil {
 			return nil, fmt.Errorf("end block %x not found", *endHash)
 		}
 	}
-	return api.getModifiedAccounts(startBlock, endBlock)
+	return api.getModifiedAccounts(startHeader, endHeader)
 }
 
-func (api *DebugAPI) getModifiedAccounts(startBlock, endBlock *types.Block) ([]common.Address, error) {
-	if startBlock.Number().Uint64() >= endBlock.Number().Uint64() {
-		return nil, fmt.Errorf("start block height (%d) must be less than end block height (%d)", startBlock.Number().Uint64(), endBlock.Number().Uint64())
+func (api *DebugAPI) getModifiedAccounts(startHeader, endHeader *types.Header) ([]common.Address, error) {
+	if startHeader.Number.Uint64() >= endHeader.Number.Uint64() {
+		return nil, fmt.Errorf("start block height (%d) must be less than end block height (%d)", startHeader.Number.Uint64(), endHeader.Number.Uint64())
 	}
 	triedb := api.eth.BlockChain().TrieDB()
 
-	oldTrie, err := trie.NewStateTrie(trie.StateTrieID(startBlock.Root()), triedb)
+	oldTrie, err := trie.NewStateTrie(trie.StateTrieID(startHeader.Root), triedb)
 	if err != nil {
 		return nil, err
 	}
-	newTrie, err := trie.NewStateTrie(trie.StateTrieID(endBlock.Root()), triedb)
+	newTrie, err := trie.NewStateTrie(trie.StateTrieID(endHeader.Root), triedb)
 	if err != nil {
 		return nil, err
 	}
@@ -445,4 +447,47 @@ func (api *DebugAPI) GetTrieFlushInterval() (string, error) {
 		return "", errors.New("trie flush interval is undefined for path-based scheme")
 	}
 	return api.eth.blockchain.GetTrieFlushInterval().String(), nil
+}
+
+func (api *DebugAPI) ExecutionWitness(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*stateless.ExecutionWitness, error) {
+	block, err := api.eth.APIBackend.BlockByNumberOrHash(ctx, blockNrOrHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve block: %w", err)
+	}
+	if block == nil {
+		return nil, fmt.Errorf("block not found: %s", blockNrOrHash.String())
+	}
+
+	witness, err := generateWitness(api.eth.blockchain, block)
+	return witness.ToExecutionWitness(), err
+}
+
+func generateWitness(blockchain *core.BlockChain, block *types.Block) (*stateless.Witness, error) {
+	witness, err := stateless.NewWitness(block.Header(), blockchain)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create witness: %w", err)
+	}
+
+	parentHeader := witness.Headers[0]
+	statedb, err := blockchain.StateAt(parentHeader.Root)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve parent state: %w", err)
+	}
+
+	statedb.StartPrefetcher("debug_execution_witness", witness, nil)
+	defer statedb.StopPrefetcher()
+
+	res, err := blockchain.Processor().Process(block, statedb, *blockchain.GetVMConfig())
+	if err != nil {
+		return nil, fmt.Errorf("failed to process block %d: %w", block.Number(), err)
+	}
+
+	// OP-Stack warning: below has the side-effect of including the withdrawals storage-root
+	// into the execution witness through the storage lookup by ValidateState, triggering the pre-fetcher.
+	// The Process function only runs through Finalize steps, not through FinalizeAndAssemble, missing merkleization.
+	if err := blockchain.Validator().ValidateState(block, statedb, res, false); err != nil {
+		return nil, fmt.Errorf("failed to validate block %d: %w", block.Number(), err)
+	}
+
+	return witness, nil
 }

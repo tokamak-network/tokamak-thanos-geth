@@ -23,6 +23,7 @@ import (
 	"math"
 	"math/big"
 	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -37,7 +38,6 @@ var (
 	bedrockGenesisTestConfig = func() *params.ChainConfig {
 		conf := *params.AllCliqueProtocolChanges // copy the config
 		conf.Clique = nil
-		conf.TerminalTotalDifficultyPassed = true
 		conf.BedrockBlock = big.NewInt(0)
 		conf.Optimism = &params.OptimismConfig{EIP1559Elasticity: 50, EIP1559Denominator: 10}
 		return &conf
@@ -46,6 +46,12 @@ var (
 		conf := *bedrockGenesisTestConfig // copy the config
 		time := uint64(0)
 		conf.EcotoneTime = &time
+		return &conf
+	}()
+	isthmusTestConfig = func() *params.ChainConfig {
+		conf := *bedrockGenesisTestConfig // copy the config
+		time := uint64(0)
+		conf.IsthmusTime = &time
 		return &conf
 	}()
 
@@ -240,219 +246,240 @@ var (
 	blockTime                   = uint64(2)
 	blockHash                   = common.BytesToHash([]byte{0x03, 0x14})
 	canyonDepositReceiptVersion = CanyonDepositReceiptVersion
-
-	// Create the corresponding receipts
-	receipts = Receipts{
-		&Receipt{
-			Status:            ReceiptStatusFailed,
-			CumulativeGasUsed: 1,
-			Logs: []*Log{
-				{
-					Address: common.BytesToAddress([]byte{0x11}),
-					Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
-					// derived fields:
-					BlockNumber: blockNumber.Uint64(),
-					TxHash:      txs[0].Hash(),
-					TxIndex:     0,
-					BlockHash:   blockHash,
-					Index:       0,
-				},
-				{
-					Address: common.BytesToAddress([]byte{0x01, 0x11}),
-					Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
-					// derived fields:
-					BlockNumber: blockNumber.Uint64(),
-					TxHash:      txs[0].Hash(),
-					TxIndex:     0,
-					BlockHash:   blockHash,
-					Index:       1,
-				},
-			},
-			// derived fields:
-			TxHash:            txs[0].Hash(),
-			ContractAddress:   common.HexToAddress("0x5a443704dd4b594b382c22a083e2bd3090a6fef3"),
-			GasUsed:           1,
-			EffectiveGasPrice: big.NewInt(11),
-			BlockHash:         blockHash,
-			BlockNumber:       blockNumber,
-			TransactionIndex:  0,
-		},
-		&Receipt{
-			PostState:         common.Hash{2}.Bytes(),
-			CumulativeGasUsed: 3,
-			Logs: []*Log{
-				{
-					Address: common.BytesToAddress([]byte{0x22}),
-					Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
-					// derived fields:
-					BlockNumber: blockNumber.Uint64(),
-					TxHash:      txs[1].Hash(),
-					TxIndex:     1,
-					BlockHash:   blockHash,
-					Index:       2,
-				},
-				{
-					Address: common.BytesToAddress([]byte{0x02, 0x22}),
-					Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
-					// derived fields:
-					BlockNumber: blockNumber.Uint64(),
-					TxHash:      txs[1].Hash(),
-					TxIndex:     1,
-					BlockHash:   blockHash,
-					Index:       3,
-				},
-			},
-			// derived fields:
-			TxHash:            txs[1].Hash(),
-			GasUsed:           2,
-			EffectiveGasPrice: big.NewInt(22),
-			BlockHash:         blockHash,
-			BlockNumber:       blockNumber,
-			TransactionIndex:  1,
-		},
-		&Receipt{
-			Type:              AccessListTxType,
-			PostState:         common.Hash{3}.Bytes(),
-			CumulativeGasUsed: 6,
-			Logs:              []*Log{},
-			// derived fields:
-			TxHash:            txs[2].Hash(),
-			GasUsed:           3,
-			EffectiveGasPrice: big.NewInt(33),
-			BlockHash:         blockHash,
-			BlockNumber:       blockNumber,
-			TransactionIndex:  2,
-		},
-		&Receipt{
-			Type:              DynamicFeeTxType,
-			PostState:         common.Hash{4}.Bytes(),
-			CumulativeGasUsed: 10,
-			Logs:              []*Log{},
-			// derived fields:
-			TxHash:            txs[3].Hash(),
-			GasUsed:           4,
-			EffectiveGasPrice: big.NewInt(1044),
-			BlockHash:         blockHash,
-			BlockNumber:       blockNumber,
-			TransactionIndex:  3,
-		},
-		&Receipt{
-			Type:              DynamicFeeTxType,
-			PostState:         common.Hash{5}.Bytes(),
-			CumulativeGasUsed: 15,
-			Logs:              []*Log{},
-			// derived fields:
-			TxHash:            txs[4].Hash(),
-			GasUsed:           5,
-			EffectiveGasPrice: big.NewInt(1055),
-			BlockHash:         blockHash,
-			BlockNumber:       blockNumber,
-			TransactionIndex:  4,
-		},
-		&Receipt{
-			Type:              BlobTxType,
-			PostState:         common.Hash{6}.Bytes(),
-			CumulativeGasUsed: 21,
-			Logs:              []*Log{},
-			// derived fields:
-			TxHash:            txs[5].Hash(),
-			GasUsed:           6,
-			EffectiveGasPrice: big.NewInt(1066),
-			BlobGasUsed:       params.BlobTxBlobGasPerBlob,
-			BlobGasPrice:      big.NewInt(920),
-			BlockHash:         blockHash,
-			BlockNumber:       blockNumber,
-			TransactionIndex:  5,
-		},
-		&Receipt{
-			Type:              BlobTxType,
-			PostState:         common.Hash{7}.Bytes(),
-			CumulativeGasUsed: 28,
-			Logs:              []*Log{},
-			// derived fields:
-			TxHash:            txs[6].Hash(),
-			GasUsed:           7,
-			EffectiveGasPrice: big.NewInt(1077),
-			BlobGasUsed:       3 * params.BlobTxBlobGasPerBlob,
-			BlobGasPrice:      big.NewInt(920),
-			BlockHash:         blockHash,
-			BlockNumber:       blockNumber,
-			TransactionIndex:  6,
-		},
-		&Receipt{
-			Type:              DepositTxType,
-			PostState:         common.Hash{5}.Bytes(),
-			CumulativeGasUsed: 50 + 28,
-			Logs: []*Log{
-				{
-					Address: common.BytesToAddress([]byte{0x33}),
-					Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
-					// derived fields:
-					BlockNumber: blockNumber.Uint64(),
-					TxHash:      txs[7].Hash(),
-					TxIndex:     7,
-					BlockHash:   blockHash,
-					Index:       4,
-				},
-				{
-					Address: common.BytesToAddress([]byte{0x03, 0x33}),
-					Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
-					// derived fields:
-					BlockNumber: blockNumber.Uint64(),
-					TxHash:      txs[7].Hash(),
-					TxIndex:     7,
-					BlockHash:   blockHash,
-					Index:       5,
-				},
-			},
-			TxHash:                txs[7].Hash(),
-			ContractAddress:       common.HexToAddress("0x3bb898b4bbe24f68a4e9be46cfe72d1787fd74f4"),
-			GasUsed:               50,
-			EffectiveGasPrice:     big.NewInt(0),
-			BlockHash:             blockHash,
-			BlockNumber:           blockNumber,
-			TransactionIndex:      7,
-			DepositNonce:          &depNonce1,
-			DepositReceiptVersion: nil,
-		},
-		&Receipt{
-			Type:              DepositTxType,
-			PostState:         common.Hash{5}.Bytes(),
-			CumulativeGasUsed: 60 + 50 + 28,
-			Logs: []*Log{
-				{
-					Address: common.BytesToAddress([]byte{0x33}),
-					Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
-					// derived fields:
-					BlockNumber: blockNumber.Uint64(),
-					TxHash:      txs[8].Hash(),
-					TxIndex:     8,
-					BlockHash:   blockHash,
-					Index:       6,
-				},
-				{
-					Address: common.BytesToAddress([]byte{0x03, 0x33}),
-					Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
-					// derived fields:
-					BlockNumber: blockNumber.Uint64(),
-					TxHash:      txs[8].Hash(),
-					TxIndex:     8,
-					BlockHash:   blockHash,
-					Index:       7,
-				},
-			},
-			TxHash:                txs[8].Hash(),
-			ContractAddress:       common.HexToAddress("0x117814af22cb83d8ad6e8489e9477d28265bc105"),
-			GasUsed:               60,
-			EffectiveGasPrice:     big.NewInt(0),
-			BlockHash:             blockHash,
-			BlockNumber:           blockNumber,
-			TransactionIndex:      8,
-			DepositNonce:          &depNonce2,
-			DepositReceiptVersion: &canyonDepositReceiptVersion,
-		},
-	}
 )
+
+var receiptsOnce sync.Once
+var testReceipts Receipts
+
+func getTestReceipts() Receipts {
+	// Compute the blooms only once
+	receiptsOnce.Do(func() {
+		// Create the corresponding receipts
+		r := Receipts{
+			&Receipt{
+				Status:            ReceiptStatusFailed,
+				CumulativeGasUsed: 1,
+				Logs: []*Log{
+					{
+						Address: common.BytesToAddress([]byte{0x11}),
+						Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
+						// derived fields:
+						BlockNumber:    blockNumber.Uint64(),
+						TxHash:         txs[0].Hash(),
+						TxIndex:        0,
+						BlockHash:      blockHash,
+						BlockTimestamp: blockTime,
+						Index:          0,
+					},
+					{
+						Address: common.BytesToAddress([]byte{0x01, 0x11}),
+						Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
+						// derived fields:
+						BlockNumber:    blockNumber.Uint64(),
+						TxHash:         txs[0].Hash(),
+						TxIndex:        0,
+						BlockHash:      blockHash,
+						BlockTimestamp: blockTime,
+						Index:          1,
+					},
+				},
+				// derived fields:
+				TxHash:            txs[0].Hash(),
+				ContractAddress:   common.HexToAddress("0x5a443704dd4b594b382c22a083e2bd3090a6fef3"),
+				GasUsed:           1,
+				EffectiveGasPrice: big.NewInt(11),
+				BlockHash:         blockHash,
+				BlockNumber:       blockNumber,
+				TransactionIndex:  0,
+			},
+			&Receipt{
+				PostState:         common.Hash{2}.Bytes(),
+				CumulativeGasUsed: 3,
+				Logs: []*Log{
+					{
+						Address: common.BytesToAddress([]byte{0x22}),
+						Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
+						// derived fields:
+						BlockNumber:    blockNumber.Uint64(),
+						TxHash:         txs[1].Hash(),
+						TxIndex:        1,
+						BlockHash:      blockHash,
+						BlockTimestamp: blockTime,
+						Index:          2,
+					},
+					{
+						Address: common.BytesToAddress([]byte{0x02, 0x22}),
+						Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
+						// derived fields:
+						BlockNumber:    blockNumber.Uint64(),
+						TxHash:         txs[1].Hash(),
+						TxIndex:        1,
+						BlockHash:      blockHash,
+						BlockTimestamp: blockTime,
+						Index:          3,
+					},
+				},
+				// derived fields:
+				TxHash:            txs[1].Hash(),
+				GasUsed:           2,
+				EffectiveGasPrice: big.NewInt(22),
+				BlockHash:         blockHash,
+				BlockNumber:       blockNumber,
+				TransactionIndex:  1,
+			},
+			&Receipt{
+				Type:              AccessListTxType,
+				PostState:         common.Hash{3}.Bytes(),
+				CumulativeGasUsed: 6,
+				Logs:              []*Log{},
+				// derived fields:
+				TxHash:            txs[2].Hash(),
+				GasUsed:           3,
+				EffectiveGasPrice: big.NewInt(33),
+				BlockHash:         blockHash,
+				BlockNumber:       blockNumber,
+				TransactionIndex:  2,
+			},
+			&Receipt{
+				Type:              DynamicFeeTxType,
+				PostState:         common.Hash{4}.Bytes(),
+				CumulativeGasUsed: 10,
+				Logs:              []*Log{},
+				// derived fields:
+				TxHash:            txs[3].Hash(),
+				GasUsed:           4,
+				EffectiveGasPrice: big.NewInt(1044),
+				BlockHash:         blockHash,
+				BlockNumber:       blockNumber,
+				TransactionIndex:  3,
+			},
+			&Receipt{
+				Type:              DynamicFeeTxType,
+				PostState:         common.Hash{5}.Bytes(),
+				CumulativeGasUsed: 15,
+				Logs:              []*Log{},
+				// derived fields:
+				TxHash:            txs[4].Hash(),
+				GasUsed:           5,
+				EffectiveGasPrice: big.NewInt(1055),
+				BlockHash:         blockHash,
+				BlockNumber:       blockNumber,
+				TransactionIndex:  4,
+			},
+			&Receipt{
+				Type:              BlobTxType,
+				PostState:         common.Hash{6}.Bytes(),
+				CumulativeGasUsed: 21,
+				Logs:              []*Log{},
+				// derived fields:
+				TxHash:            txs[5].Hash(),
+				GasUsed:           6,
+				EffectiveGasPrice: big.NewInt(1066),
+				BlobGasUsed:       params.BlobTxBlobGasPerBlob,
+				BlobGasPrice:      big.NewInt(920),
+				BlockHash:         blockHash,
+				BlockNumber:       blockNumber,
+				TransactionIndex:  5,
+			},
+			&Receipt{
+				Type:              BlobTxType,
+				PostState:         common.Hash{7}.Bytes(),
+				CumulativeGasUsed: 28,
+				Logs:              []*Log{},
+				// derived fields:
+				TxHash:            txs[6].Hash(),
+				GasUsed:           7,
+				EffectiveGasPrice: big.NewInt(1077),
+				BlobGasUsed:       3 * params.BlobTxBlobGasPerBlob,
+				BlobGasPrice:      big.NewInt(920),
+				BlockHash:         blockHash,
+				BlockNumber:       blockNumber,
+				TransactionIndex:  6,
+			},
+			&Receipt{
+				Type:              DepositTxType,
+				PostState:         common.Hash{5}.Bytes(),
+				CumulativeGasUsed: 50 + 28,
+				Logs: []*Log{
+					{
+						Address: common.BytesToAddress([]byte{0x33}),
+						Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
+						// derived fields:
+						BlockNumber:    blockNumber.Uint64(),
+						TxHash:         txs[7].Hash(),
+						TxIndex:        7,
+						BlockHash:      blockHash,
+						BlockTimestamp: blockTime,
+						Index:          4,
+					},
+					{
+						Address: common.BytesToAddress([]byte{0x03, 0x33}),
+						Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
+						// derived fields:
+						BlockNumber:    blockNumber.Uint64(),
+						TxHash:         txs[7].Hash(),
+						TxIndex:        7,
+						BlockHash:      blockHash,
+						BlockTimestamp: blockTime,
+						Index:          5,
+					},
+				},
+				TxHash:                txs[7].Hash(),
+				ContractAddress:       common.HexToAddress("0x3bb898b4bbe24f68a4e9be46cfe72d1787fd74f4"),
+				GasUsed:               50,
+				EffectiveGasPrice:     big.NewInt(0),
+				BlockHash:             blockHash,
+				BlockNumber:           blockNumber,
+				TransactionIndex:      7,
+				DepositNonce:          &depNonce1,
+				DepositReceiptVersion: nil,
+			},
+			&Receipt{
+				Type:              DepositTxType,
+				PostState:         common.Hash{5}.Bytes(),
+				CumulativeGasUsed: 60 + 50 + 28,
+				Logs: []*Log{
+					{
+						Address: common.BytesToAddress([]byte{0x33}),
+						Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
+						// derived fields:
+						BlockNumber:    blockNumber.Uint64(),
+						TxHash:         txs[8].Hash(),
+						TxIndex:        8,
+						BlockHash:      blockHash,
+						BlockTimestamp: blockTime,
+						Index:          6,
+					},
+					{
+						Address: common.BytesToAddress([]byte{0x03, 0x33}),
+						Topics:  []common.Hash{common.HexToHash("dead"), common.HexToHash("beef")},
+						// derived fields:
+						BlockNumber:    blockNumber.Uint64(),
+						TxHash:         txs[8].Hash(),
+						TxIndex:        8,
+						BlockHash:      blockHash,
+						BlockTimestamp: blockTime,
+						Index:          7,
+					},
+				},
+				TxHash:                txs[8].Hash(),
+				ContractAddress:       common.HexToAddress("0x117814af22cb83d8ad6e8489e9477d28265bc105"),
+				GasUsed:               60,
+				EffectiveGasPrice:     big.NewInt(0),
+				BlockHash:             blockHash,
+				BlockNumber:           blockNumber,
+				TransactionIndex:      8,
+				DepositNonce:          &depNonce2,
+				DepositReceiptVersion: &canyonDepositReceiptVersion,
+			},
+		}
+		for _, receipt := range r {
+			receipt.Bloom = CreateBloom(receipt)
+		}
+		testReceipts = r
+	})
+	return testReceipts
+}
 
 func TestDecodeEmptyTypedReceipt(t *testing.T) {
 	input := []byte{0x80}
@@ -468,6 +495,7 @@ func TestDeriveFields(t *testing.T) {
 	// Re-derive receipts.
 	baseFee := big.NewInt(1000)
 	blobGasPrice := big.NewInt(920)
+	receipts := getTestReceipts()
 	derivedReceipts := clearComputedFieldsOnReceipts(receipts)
 	err := Receipts(derivedReceipts).DeriveFields(params.TestChainConfig, blockHash, blockNumber.Uint64(), blockTime, baseFee, blobGasPrice, txs)
 	if err != nil {
@@ -493,6 +521,7 @@ func TestDeriveFields(t *testing.T) {
 // Test that we can marshal/unmarshal receipts to/from json without errors.
 // This also confirms that our test receipts contain all the required fields.
 func TestReceiptJSON(t *testing.T) {
+	receipts := getTestReceipts()
 	for i := range receipts {
 		b, err := receipts[i].MarshalJSON()
 		if err != nil {
@@ -501,7 +530,7 @@ func TestReceiptJSON(t *testing.T) {
 		r := Receipt{}
 		err = r.UnmarshalJSON(b)
 		if err != nil {
-			t.Fatal("error unmarshaling receipt from json:", err)
+			t.Fatal("error unmarshalling receipt from json:", err)
 		}
 
 		// Make sure marshal/unmarshal doesn't affect receipt hash root computation by comparing
@@ -521,6 +550,7 @@ func TestReceiptJSON(t *testing.T) {
 // Test we can still parse receipt without EffectiveGasPrice for backwards compatibility, even
 // though it is required per the spec.
 func TestEffectiveGasPriceNotRequired(t *testing.T) {
+	receipts := getTestReceipts()
 	r := *receipts[0]
 	r.EffectiveGasPrice = nil
 	b, err := r.MarshalJSON()
@@ -530,7 +560,7 @@ func TestEffectiveGasPriceNotRequired(t *testing.T) {
 	r2 := Receipt{}
 	err = r2.UnmarshalJSON(b)
 	if err != nil {
-		t.Fatal("error unmarshaling receipt from json:", err)
+		t.Fatal("error unmarshalling receipt from json:", err)
 	}
 }
 
@@ -564,7 +594,7 @@ func TestTypedReceiptEncodingDecoding(t *testing.T) {
 
 func TestReceiptMarshalBinary(t *testing.T) {
 	// Legacy Receipt
-	legacyReceipt.Bloom = CreateBloom(Receipts{legacyReceipt})
+	legacyReceipt.Bloom = CreateBloom(legacyReceipt)
 	have, err := legacyReceipt.MarshalBinary()
 	if err != nil {
 		t.Fatalf("marshal binary error: %v", err)
@@ -591,7 +621,7 @@ func TestReceiptMarshalBinary(t *testing.T) {
 
 	// 2930 Receipt
 	buf.Reset()
-	accessListReceipt.Bloom = CreateBloom(Receipts{accessListReceipt})
+	accessListReceipt.Bloom = CreateBloom(accessListReceipt)
 	have, err = accessListReceipt.MarshalBinary()
 	if err != nil {
 		t.Fatalf("marshal binary error: %v", err)
@@ -609,7 +639,7 @@ func TestReceiptMarshalBinary(t *testing.T) {
 
 	// 1559 Receipt
 	buf.Reset()
-	eip1559Receipt.Bloom = CreateBloom(Receipts{eip1559Receipt})
+	eip1559Receipt.Bloom = CreateBloom(eip1559Receipt)
 	have, err = eip1559Receipt.MarshalBinary()
 	if err != nil {
 		t.Fatalf("marshal binary error: %v", err)
@@ -633,7 +663,7 @@ func TestReceiptUnmarshalBinary(t *testing.T) {
 	if err := gotLegacyReceipt.UnmarshalBinary(legacyBinary); err != nil {
 		t.Fatalf("unmarshal binary error: %v", err)
 	}
-	legacyReceipt.Bloom = CreateBloom(Receipts{legacyReceipt})
+	legacyReceipt.Bloom = CreateBloom(legacyReceipt)
 	if !reflect.DeepEqual(gotLegacyReceipt, legacyReceipt) {
 		t.Errorf("receipt unmarshalled from binary mismatch, got %v want %v", gotLegacyReceipt, legacyReceipt)
 	}
@@ -644,7 +674,7 @@ func TestReceiptUnmarshalBinary(t *testing.T) {
 	if err := gotAccessListReceipt.UnmarshalBinary(accessListBinary); err != nil {
 		t.Fatalf("unmarshal binary error: %v", err)
 	}
-	accessListReceipt.Bloom = CreateBloom(Receipts{accessListReceipt})
+	accessListReceipt.Bloom = CreateBloom(accessListReceipt)
 	if !reflect.DeepEqual(gotAccessListReceipt, accessListReceipt) {
 		t.Errorf("receipt unmarshalled from binary mismatch, got %v want %v", gotAccessListReceipt, accessListReceipt)
 	}
@@ -655,7 +685,7 @@ func TestReceiptUnmarshalBinary(t *testing.T) {
 	if err := got1559Receipt.UnmarshalBinary(eip1559RctBinary); err != nil {
 		t.Fatalf("unmarshal binary error: %v", err)
 	}
-	eip1559Receipt.Bloom = CreateBloom(Receipts{eip1559Receipt})
+	eip1559Receipt.Bloom = CreateBloom(eip1559Receipt)
 	if !reflect.DeepEqual(got1559Receipt, eip1559Receipt) {
 		t.Errorf("receipt unmarshalled from binary mismatch, got %v want %v", got1559Receipt, eip1559Receipt)
 	}
@@ -681,6 +711,7 @@ func clearComputedFieldsOnReceipt(receipt *Receipt) *Receipt {
 	cpy.EffectiveGasPrice = big.NewInt(0)
 	cpy.BlobGasUsed = 0
 	cpy.BlobGasPrice = nil
+	cpy.Bloom = CreateBloom(&cpy)
 	return &cpy
 }
 
@@ -765,6 +796,86 @@ func getOptimismEcotoneTxReceipts(l1AttributesPayload []byte, l1GasPrice, l1Blob
 			L1BlobBaseFeeScalar: blobBaseFeeScalar,
 		},
 	}
+	for _, receipt := range receipts {
+		receipt.Bloom = CreateBloom(receipt)
+	}
+
+	return txs, receipts
+}
+
+func getOptimismIsthmusTxReceipts(l1AttributesPayload []byte, l1GasPrice, l1BlobGasPrice, l1GasUsed, l1Fee *big.Int, baseFeeScalar, blobBaseFeeScalar, operatorFeeScalar, operatorFeeConstant *uint64) ([]*Transaction, []*Receipt) {
+	// Create a few transactions to have receipts for
+	txs := Transactions{
+		NewTx(&DepositTx{
+			To:    nil, // contract creation
+			Value: big.NewInt(6),
+			Gas:   50,
+			Data:  l1AttributesPayload,
+		}),
+		emptyTx,
+	}
+
+	// Create the corresponding receipts
+	receipts := Receipts{
+		&Receipt{
+			Type:              DepositTxType,
+			PostState:         common.Hash{5}.Bytes(),
+			CumulativeGasUsed: 50 + 15,
+			Logs: []*Log{
+				{
+					Address: common.BytesToAddress([]byte{0x33}),
+					// derived fields:
+					BlockNumber: blockNumber.Uint64(),
+					TxHash:      txs[0].Hash(),
+					TxIndex:     0,
+					BlockHash:   blockHash,
+					Index:       0,
+				},
+				{
+					Address: common.BytesToAddress([]byte{0x03, 0x33}),
+					// derived fields:
+					BlockNumber: blockNumber.Uint64(),
+					TxHash:      txs[0].Hash(),
+					TxIndex:     0,
+					BlockHash:   blockHash,
+					Index:       1,
+				},
+			},
+			TxHash:            txs[0].Hash(),
+			ContractAddress:   common.HexToAddress("0x3bb898b4bbe24f68a4e9be46cfe72d1787fd74f4"),
+			GasUsed:           65,
+			EffectiveGasPrice: big.NewInt(0),
+			BlockHash:         blockHash,
+			BlockNumber:       blockNumber,
+			TransactionIndex:  0,
+			DepositNonce:      &depNonce1,
+		},
+		&Receipt{
+			Type:              LegacyTxType,
+			EffectiveGasPrice: big.NewInt(0),
+			PostState:         common.Hash{4}.Bytes(),
+			CumulativeGasUsed: 10,
+			Logs:              []*Log{},
+			// derived fields:
+			TxHash:              txs[1].Hash(),
+			GasUsed:             18446744073709551561,
+			BlockHash:           blockHash,
+			BlockNumber:         blockNumber,
+			TransactionIndex:    1,
+			L1GasPrice:          l1GasPrice,
+			L1BlobBaseFee:       l1BlobGasPrice,
+			L1GasUsed:           l1GasUsed,
+			L1Fee:               l1Fee,
+			L1BaseFeeScalar:     baseFeeScalar,
+			L1BlobBaseFeeScalar: blobBaseFeeScalar,
+			OperatorFeeScalar:   operatorFeeScalar,
+			OperatorFeeConstant: operatorFeeConstant,
+		},
+	}
+	for _, receipt := range receipts {
+		receipt.Bloom = CreateBloom(receipt)
+	}
+
 	return txs, receipts
 }
 
@@ -833,6 +944,10 @@ func getOptimismTxReceipts(l1AttributesPayload []byte, l1GasPrice, l1GasUsed, l1
 			FeeScalar:        feeScalar,
 		},
 	}
+	for _, receipt := range receipts {
+		receipt.Bloom = CreateBloom(receipt)
+	}
+
 	return txs, receipts
 }
 
@@ -882,6 +997,56 @@ func TestDeriveOptimismEcotoneTxReceipts(t *testing.T) {
 	}
 
 	err = Receipts(derivedReceipts).DeriveFields(ecotoneTestConfig, blockHash, blockNumber.Uint64(), 0, baseFee, nil, txs)
+	if err != nil {
+		t.Fatalf("DeriveFields(...) = %v, want <nil>", err)
+	}
+	diffReceipts(t, receipts, derivedReceipts)
+}
+
+func TestDeriveOptimismIsthmusTxReceipts(t *testing.T) {
+	// Isthmus style l1 attributes with baseFeeScalar=2, blobBaseFeeScalar=3, baseFee=1000*1e6, blobBaseFee=10*1e6, operatorFeeScalar=7, operatorFeeConstant=9
+	payload := common.Hex2Bytes("098999be000000020000000300000000000004d200000000000004d200000000000004d2000000000000000000000000000000000000000000000000000000003b9aca00000000000000000000000000000000000000000000000000000000000098968000000000000000000000000000000000000000000000000000000000000004d200000000000000000000000000000000000000000000000000000000000004d255c6fb7c116fb15b44847d04")
+	// the parameters we use below are defined in rollup_test.go
+	baseFeeScalarUint64 := baseFeeScalar.Uint64()
+	blobBaseFeeScalarUint64 := blobBaseFeeScalar.Uint64()
+	operatorFeeScalarUint64 := operatorFeeScalar.Uint64()
+	operatorFeeConstantUint64 := operatorFeeConstant.Uint64()
+	txs, receipts := getOptimismIsthmusTxReceipts(payload, baseFee, blobBaseFee, minimumFjordGas, fjordFee, &baseFeeScalarUint64, &blobBaseFeeScalarUint64, &operatorFeeScalarUint64, &operatorFeeConstantUint64)
+
+	// Re-derive receipts.
+	baseFee := big.NewInt(1000)
+	derivedReceipts := clearComputedFieldsOnReceipts(receipts)
+	// Should error out if we try to process this with a pre-Isthmus config
+	err := Receipts(derivedReceipts).DeriveFields(bedrockGenesisTestConfig, blockHash, blockNumber.Uint64(), 0, baseFee, nil, txs)
+	if err == nil {
+		t.Fatalf("expected error from deriving isthmus receipts with pre-isthmus config, got none")
+	}
+
+	err = Receipts(derivedReceipts).DeriveFields(isthmusTestConfig, blockHash, blockNumber.Uint64(), 0, baseFee, nil, txs)
+	if err != nil {
+		t.Fatalf("DeriveFields(...) = %v, want <nil>", err)
+	}
+	diffReceipts(t, receipts, derivedReceipts)
+}
+
+func TestDeriveOptimismIsthmusTxReceiptsNoOperatorFee(t *testing.T) {
+	// Isthmus style l1 attributes with baseFeeScalar=2, blobBaseFeeScalar=3, baseFee=1000*1e6, blobBaseFee=10*1e6, operatorFeeScalar=7, operatorFeeConstant=9
+	payload := common.Hex2Bytes("098999be000000020000000300000000000004d200000000000004d200000000000004d2000000000000000000000000000000000000000000000000000000003b9aca00000000000000000000000000000000000000000000000000000000000098968000000000000000000000000000000000000000000000000000000000000004d200000000000000000000000000000000000000000000000000000000000004d2000000000000000000000000")
+	// the parameters we use below are defined in rollup_test.go
+	baseFeeScalarUint64 := baseFeeScalar.Uint64()
+	blobBaseFeeScalarUint64 := blobBaseFeeScalar.Uint64()
+	txs, receipts := getOptimismIsthmusTxReceipts(payload, baseFee, blobBaseFee, minimumFjordGas, fjordFee, &baseFeeScalarUint64, &blobBaseFeeScalarUint64, nil, nil)
+
+	// Re-derive receipts.
+	baseFee := big.NewInt(1000)
+	derivedReceipts := clearComputedFieldsOnReceipts(receipts)
+	// Should error out if we try to process this with a pre-Isthmus config
+	err := Receipts(derivedReceipts).DeriveFields(bedrockGenesisTestConfig, blockHash, blockNumber.Uint64(), 0, baseFee, nil, txs)
+	if err == nil {
+		t.Fatalf("expected error from deriving isthmus receipts with pre-isthmus config, got none")
+	}
+
+	err = Receipts(derivedReceipts).DeriveFields(isthmusTestConfig, blockHash, blockNumber.Uint64(), 0, baseFee, nil, txs)
 	if err != nil {
 		t.Fatalf("DeriveFields(...) = %v, want <nil>", err)
 	}

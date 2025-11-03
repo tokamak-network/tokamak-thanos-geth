@@ -35,11 +35,14 @@ const (
 	subscribeMethodSuffix    = "_subscribe"
 	unsubscribeMethodSuffix  = "_unsubscribe"
 	notificationMethodSuffix = "_subscription"
+	maxMethodNameLength      = 2048
 
 	defaultWriteTimeout = 10 * time.Second // used if context has no deadline
 )
 
 var null = json.RawMessage("null")
+
+type JsonError = jsonError
 
 type subscriptionResult struct {
 	ID     string          `json:"subscription"`
@@ -266,7 +269,7 @@ func (c *jsonCodec) close() {
 	})
 }
 
-// Closed returns a channel which will be closed when Close is called
+// closed returns a channel which will be closed when Close is called
 func (c *jsonCodec) closed() <-chan interface{} {
 	return c.closeCh
 }

@@ -17,12 +17,12 @@
 package vm
 
 import (
+	"math"
+	"math/big"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -43,18 +43,18 @@ func TestLoopInterrupt(t *testing.T) {
 	}
 
 	for i, tt := range loopInterruptTests {
-		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 		statedb.CreateAccount(address)
 		statedb.SetCode(address, common.Hex2Bytes(tt))
 		statedb.Finalise(true)
 
-		evm := NewEVM(vmctx, TxContext{}, statedb, params.AllEthashProtocolChanges, Config{})
+		evm := NewEVM(vmctx, statedb, params.AllEthashProtocolChanges, Config{})
 
 		errChannel := make(chan error)
 		timeout := make(chan bool)
 
 		go func(evm *EVM) {
-			_, _, err := evm.Call(AccountRef(common.Address{}), address, nil, math.MaxUint64, new(uint256.Int))
+			_, _, err := evm.Call(common.Address{}, address, nil, math.MaxUint64, new(uint256.Int))
 			errChannel <- err
 		}(evm)
 
@@ -73,5 +73,24 @@ func TestLoopInterrupt(t *testing.T) {
 				t.Errorf("test %d failure: %v", i, err)
 			}
 		}
+	}
+}
+
+func BenchmarkInterpreter(b *testing.B) {
+	var (
+		statedb, _        = state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+		evm               = NewEVM(BlockContext{BlockNumber: big.NewInt(1), Time: 1, Random: &common.Hash{}}, statedb, params.MergedTestChainConfig, Config{})
+		startGas   uint64 = 100_000_000
+		value             = uint256.NewInt(0)
+		stack             = newstack()
+		mem               = NewMemory()
+		contract          = NewContract(common.Address{}, common.Address{}, value, startGas, nil)
+	)
+	stack.push(uint256.NewInt(123))
+	stack.push(uint256.NewInt(123))
+	gasSStoreEIP3529 = makeGasSStoreFunc(params.SstoreClearsScheduleRefundEIP3529)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		gasSStoreEIP3529(evm, contract, stack, mem, 1234)
 	}
 }
