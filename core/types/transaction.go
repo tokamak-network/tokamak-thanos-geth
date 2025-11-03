@@ -226,8 +226,6 @@ func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
 		inner = new(SetCodeTx)
 	case DepositTxType:
 		inner = new(DepositTx)
-	case SetCodeTxType:
-		inner = new(SetCodeTx)
 	default:
 		return nil, ErrTxTypeNotSupported
 	}
@@ -709,15 +707,6 @@ func (tx *Transaction) Size() uint64 {
 
 	tx.size.Store(size)
 	return size
-}
-
-// SetCodeAuthorizations returns the authorizations list of the transaction.
-func (tx *Transaction) SetCodeAuthorizations() []SetCodeAuthorization {
-	setcodetx, ok := tx.inner.(*SetCodeTx)
-	if !ok {
-		return nil
-	}
-	return setcodetx.AuthList
 }
 
 // WithSignature returns a new transaction with the given signature.
