@@ -28,6 +28,18 @@ import (
 	"github.com/holiman/uint256"
 )
 
+const (
+	// BlobSidecarVersion0 includes a single proof for verifying the entire blob
+	// against its commitment. Used when the full blob is available and needs to
+	// be checked as a whole.
+	BlobSidecarVersion0 = byte(0)
+
+	// BlobSidecarVersion1 includes multiple cell proofs for verifying specific
+	// blob elements (cells). Used in scenarios like data availability sampling,
+	// where only portions of the blob are verified individually.
+	BlobSidecarVersion1 = byte(1)
+)
+
 // BlobTx represents an EIP-4844 transaction.
 type BlobTx struct {
 	ChainID    *uint256.Int
@@ -54,6 +66,7 @@ type BlobTx struct {
 
 // BlobTxSidecar contains the blobs of a blob transaction.
 type BlobTxSidecar struct {
+	Version     byte
 	Blobs       []kzg4844.Blob       // Blobs needed by the blob pool
 	Commitments []kzg4844.Commitment // Commitments needed by the blob pool
 	Proofs      []kzg4844.Proof      // Proofs needed by the blob pool
