@@ -1199,3 +1199,39 @@ func (c *ChainConfig) Timestamp(fork forks.Fork) *uint64 {
 		return nil
 	}
 }
+
+// IsOsaka returns whether time is either equal to the Osaka fork time or greater.
+func (c *ChainConfig) IsOsaka(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.OsakaTime, time)
+}
+
+// IsBPO1 returns whether time is either equal to the BPO1 fork time or greater.
+func (c *ChainConfig) IsBPO1(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.BPO1Time, time)
+}
+
+// IsBPO2 returns whether time is either equal to the BPO2 fork time or greater.
+func (c *ChainConfig) IsBPO2(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.BPO2Time, time)
+}
+
+// IsBPO3 returns whether time is either equal to the BPO3 fork time or greater.
+func (c *ChainConfig) IsBPO3(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.BPO3Time, time)
+}
+
+// IsBPO4 returns whether time is either equal to the BPO4 fork time or greater.
+func (c *ChainConfig) IsBPO4(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.BPO4Time, time)
+}
+
+// IsBPO5 returns whether time is either equal to the BPO5 fork time or greater.
+func (c *ChainConfig) IsBPO5(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.BPO5Time, time)
+}
+
+// ActiveSystemContracts returns the system contracts that are active at the given timestamp.
+func (c *ChainConfig) ActiveSystemContracts(time uint64) map[string]common.Address {
+	// Returns empty map for now, can be extended later with actual system contracts
+	return make(map[string]common.Address)
+}
