@@ -106,6 +106,10 @@ func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types
 	if opts.Config.IsShanghai(head.Number, head.Time) && tx.To() == nil && len(tx.Data()) > params.MaxInitCodeSize {
 		return fmt.Errorf("%w: code size %v, limit %v", core.ErrMaxInitCodeSizeExceeded, len(tx.Data()), params.MaxInitCodeSize)
 	}
+	// Check transaction gas limit cap (EIP-7825, activated with Osaka fork)
+	if opts.Config.IsOsaka(head.Number, head.Time) && tx.Gas() > params.MaxTxGas {
+		return fmt.Errorf("%w (cap: %d, tx: %d)", core.ErrGasLimitTooHigh, params.MaxTxGas, tx.Gas())
+	}
 	// Transactions can't be negative. This may never happen using RLP decoded
 	// transactions but may occur for transactions created using the RPC.
 	if tx.Value().Sign() < 0 {

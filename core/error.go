@@ -59,6 +59,10 @@ var (
 	// by a transaction is higher than what's left in the block.
 	ErrGasLimitReached = errors.New("gas limit reached")
 
+	// ErrGasLimitTooHigh is returned if the transaction gas limit exceeds the maximum
+	// allowed transaction gas limit (EIP-7825).
+	ErrGasLimitTooHigh = errors.New("transaction gas limit too high")
+
 	// ErrInsufficientFundsForTransfer is returned if the transaction sender doesn't
 	// have enough funds for transfer(topmost call only).
 	ErrInsufficientFundsForTransfer = errors.New("insufficient funds for transfer")
