@@ -69,7 +69,7 @@ jobs:
         uses: Noelware/docker-manifest-action@master
         with:
           tags: tokamaknetwork/thanos-op-geth:nightly, tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}
-          images: tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag}}-amd64,tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-arm64
+          inputs: tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag}}-amd64,tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-arm64
           push: true
 
   update-kustomize:
