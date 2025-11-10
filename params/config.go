@@ -17,6 +17,7 @@
 package params
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -608,6 +609,24 @@ func (c *ChainConfig) Description() string {
 	if c.PragueTime != nil {
 		banner += fmt.Sprintf(" - Prague:                      @%-10v\n", *c.PragueTime)
 	}
+	if c.OsakaTime != nil {
+		banner += fmt.Sprintf(" - Osaka:                      @%-10v\n", *c.OsakaTime)
+	}
+	if c.BPO1Time != nil {
+		banner += fmt.Sprintf(" - BPO1:                      @%-10v\n", *c.BPO1Time)
+	}
+	if c.BPO2Time != nil {
+		banner += fmt.Sprintf(" - BPO2:                      @%-10v\n", *c.BPO2Time)
+	}
+	if c.BPO3Time != nil {
+		banner += fmt.Sprintf(" - BPO3:                      @%-10v\n", *c.BPO3Time)
+	}
+	if c.BPO4Time != nil {
+		banner += fmt.Sprintf(" - BPO4:                      @%-10v\n", *c.BPO4Time)
+	}
+	if c.BPO5Time != nil {
+		banner += fmt.Sprintf(" - BPO5:                      @%-10v\n", *c.BPO5Time)
+	}
 	if c.VerkleTime != nil {
 		banner += fmt.Sprintf(" - Verkle:                      @%-10v\n", *c.VerkleTime)
 	}
@@ -839,7 +858,13 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "shanghaiTime", timestamp: c.ShanghaiTime},
 		{name: "cancunTime", timestamp: c.CancunTime, optional: true},
 		{name: "pragueTime", timestamp: c.PragueTime, optional: true},
+		{name: "osakaTime", timestamp: c.OsakaTime, optional: true},
 		{name: "verkleTime", timestamp: c.VerkleTime, optional: true},
+		{name: "bpo1", timestamp: c.BPO1Time, optional: true},
+		{name: "bpo2", timestamp: c.BPO2Time, optional: true},
+		{name: "bpo3", timestamp: c.BPO3Time, optional: true},
+		{name: "bpo4", timestamp: c.BPO4Time, optional: true},
+		{name: "bpo5", timestamp: c.BPO5Time, optional: true},
 	} {
 		if lastFork.name != "" {
 			switch {
@@ -874,6 +899,43 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		if !cur.optional || (cur.block != nil || cur.timestamp != nil) {
 			lastFork = cur
 		}
+	}
+	// Validate blob schedule entries for configured forks
+	bsc := c.BlobScheduleConfig
+	if bsc == nil {
+		bsc = new(BlobScheduleConfig)
+	}
+	for _, cur := range []struct {
+		name      string
+		timestamp *uint64
+		config    *BlobConfig
+	}{
+		{name: "cancun", timestamp: c.CancunTime, config: bsc.Cancun},
+		{name: "prague", timestamp: c.PragueTime, config: bsc.Prague},
+		{name: "osaka", timestamp: c.OsakaTime, config: bsc.Osaka},
+		{name: "bpo1", timestamp: c.BPO1Time, config: bsc.BPO1},
+		{name: "bpo2", timestamp: c.BPO2Time, config: bsc.BPO2},
+		{name: "bpo3", timestamp: c.BPO3Time, config: bsc.BPO3},
+		{name: "bpo4", timestamp: c.BPO4Time, config: bsc.BPO4},
+		{name: "bpo5", timestamp: c.BPO5Time, config: bsc.BPO5},
+	} {
+		if cur.config != nil {
+			if err := cur.config.validate(); err != nil {
+				return fmt.Errorf("invalid chain configuration in blobSchedule for fork %q: %v", cur.name, err)
+			}
+		}
+		if cur.timestamp != nil {
+			if cur.config == nil {
+				return fmt.Errorf("invalid chain configuration: missing entry for fork %q in blobSchedule", cur.name)
+			}
+		}
+	}
+	return nil
+}
+
+func (bc *BlobConfig) validate() error {
+	if bc.UpdateFraction == 0 {
+		return errors.New("update fraction must be defined and non-zero")
 	}
 	return nil
 }
@@ -975,6 +1037,18 @@ func (c *ChainConfig) LatestFork(time uint64) forks.Fork {
 	london := c.LondonBlock
 
 	switch {
+	case c.IsBPO5(london, time):
+		return forks.BPO5
+	case c.IsBPO4(london, time):
+		return forks.BPO4
+	case c.IsBPO3(london, time):
+		return forks.BPO3
+	case c.IsBPO2(london, time):
+		return forks.BPO2
+	case c.IsBPO1(london, time):
+		return forks.BPO1
+	case c.IsOsaka(london, time):
+		return forks.Osaka
 	case c.IsPrague(london, time):
 		return forks.Prague
 	case c.IsCancun(london, time):
