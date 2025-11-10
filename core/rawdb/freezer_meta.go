@@ -24,9 +24,10 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
-const freezerVersion = 1 // The initial version tag of freezer table metadata
+const freezerVersion = 2 // Use V2 metadata format to align with op-geth
 
-// freezerTableMeta wraps all the metadata of the freezer table.
+// freezerTableMeta wraps all the metadata of the freezer table (V1 and V2).
+// V2 extends V1 with a flushOffset field.
 type freezerTableMeta struct {
 	// Version is the versioning descriptor of the freezer table.
 	Version uint16
@@ -36,6 +37,10 @@ type freezerTableMeta struct {
 	// plus the number of items hidden in the table, so it should never
 	// be lower than the "actual tail".
 	VirtualTail uint64
+
+	// FlushOffset represents the index offset up to which the index/data
+	// has been fsync'd to disk. Only present in V2 metadata.
+	FlushOffset int64
 }
 
 // newMetadata initializes the metadata object with the given virtual tail.
@@ -49,25 +54,61 @@ func newMetadata(tail uint64) *freezerTableMeta {
 // readMetadata reads the metadata of the freezer table from the
 // given metadata file.
 func readMetadata(file *os.File) (*freezerTableMeta, error) {
-	_, err := file.Seek(0, io.SeekStart)
-	if err != nil {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	var meta freezerTableMeta
-	if err := rlp.Decode(file, &meta); err != nil {
+	// Try to decode as V2: [Version, Tail, Offset]
+	var v2 struct {
+		Version uint16
+		Tail    uint64
+		Offset  uint64
+	}
+	if err := rlp.Decode(file, &v2); err == nil && v2.Version == freezerVersion {
+		return &freezerTableMeta{
+			Version:     v2.Version,
+			VirtualTail: v2.Tail,
+			FlushOffset: int64(v2.Offset),
+		}, nil
+	}
+	// Rewind and try to decode as V1: [Version, Tail]
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	return &meta, nil
+	var v1 struct {
+		Version uint16
+		Tail    uint64
+	}
+	if err := rlp.Decode(file, &v1); err != nil {
+		return nil, err
+	}
+	return &freezerTableMeta{
+		Version:     v1.Version,
+		VirtualTail: v1.Tail,
+		FlushOffset: 0,
+	}, nil
 }
 
 // writeMetadata writes the metadata of the freezer table into the
 // given metadata file.
 func writeMetadata(file *os.File, meta *freezerTableMeta) error {
-	_, err := file.Seek(0, io.SeekStart)
-	if err != nil {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	return rlp.Encode(file, meta)
+	// Encode as V2: [Version, Tail, Offset]
+	var off uint64
+	if meta.FlushOffset > 0 {
+		off = uint64(meta.FlushOffset)
+	}
+	type obj struct {
+		Version uint16
+		Tail    uint64
+		Offset  uint64
+	}
+	return rlp.Encode(file, &obj{
+		Version: freezerVersion,
+		Tail:    meta.VirtualTail,
+		Offset:  off,
+	})
 }
 
 // loadMetadata loads the metadata from the given metadata file.

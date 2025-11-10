@@ -187,15 +187,14 @@ func CreateConsensusEngine(config *params.ChainConfig, db ethdb.Database) (conse
 	if config.Optimism != nil {
 		return beacon.New(&beacon.OpLegacy{}), nil
 	}
+	// Align with op-geth: require TTD to be set, then wrap legacy engines.
+	if config.TerminalTotalDifficulty == nil {
+		return nil, errors.New("'terminalTotalDifficulty' is not set in genesis block")
+	}
 	// If proof-of-authority is requested, set it up
 	if config.Clique != nil {
 		return beacon.New(clique.New(config.Clique, db)), nil
 	}
-	// If defaulting to proof-of-work, enforce an already merged network since
-	// we cannot run PoW algorithms anymore, so we cannot even follow a chain
-	// not coordinated by a beacon node.
-	if !config.TerminalTotalDifficultyPassed {
-		return nil, errors.New("ethash is only supported as a historical component of already merged networks")
-	}
+	// Default to ethash wrapped in beacon for historical support.
 	return beacon.New(ethash.NewFaker()), nil
 }
