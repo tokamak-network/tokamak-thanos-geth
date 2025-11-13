@@ -510,7 +510,7 @@ func (c *CliqueConfig) String() string {
 type BlobConfig struct {
 	Target         uint64 `json:"target"`
 	Max            uint64 `json:"max"`
-	UpdateFraction uint64 `json:"updateFraction"`
+	UpdateFraction uint64 `json:"baseFeeUpdateFraction"`
 }
 
 // BlobScheduleConfig stores the configuration for blob-related parameters at each fork.
