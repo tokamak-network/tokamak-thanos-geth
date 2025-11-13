@@ -154,6 +154,7 @@ func (tx *BlobTx) copy() TxData {
 	}
 	if tx.Sidecar != nil {
 		cpy.Sidecar = &BlobTxSidecar{
+			Version:     tx.Sidecar.Version, // Preserve sidecar version
 			Blobs:       append([]kzg4844.Blob(nil), tx.Sidecar.Blobs...),
 			Commitments: append([]kzg4844.Commitment(nil), tx.Sidecar.Commitments...),
 			Proofs:      append([]kzg4844.Proof(nil), tx.Sidecar.Proofs...),
