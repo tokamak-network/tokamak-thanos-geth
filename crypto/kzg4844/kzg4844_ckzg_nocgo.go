@@ -68,3 +68,8 @@ func ckzgVerifyBlobProof(blob *Blob, commitment Commitment, proof Proof) error {
 func ckzgComputeCellProofs(blob *Blob) ([]Proof, error) {
 	panic("unsupported platform")
 }
+
+// ckzgVerifyCellProofBatch verifies that the blob data corresponds to the provided commitment.
+func ckzgVerifyCellProofBatch(blobs []Blob, commitments []Commitment, cellProofs []Proof) error {
+	panic("unsupported platform")
+}
