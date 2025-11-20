@@ -3,7 +3,7 @@ name: Tokamak Geth Publish (Nightly Version)
 on:
   push:
     branches:
-      - 'feat/apply-selected-fusaka-commits'
+      - 'main'
 
 jobs:
   version:
