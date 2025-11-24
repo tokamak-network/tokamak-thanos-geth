@@ -307,6 +307,10 @@ func (st *StateTransition) preCheck() error {
 		}
 		return st.gp.SubGas(st.msg.GasLimit) // gas used by deposits may not be used by other txs
 	}
+	// Check transaction gas limit cap (EIP-7825, activated with Osaka fork)
+	if st.evm.ChainConfig().IsOsaka(st.evm.Context.BlockNumber, st.evm.Context.Time) && st.msg.GasLimit > params.MaxTxGas {
+		return fmt.Errorf("%w (cap: %d, tx: %d)", ErrGasLimitTooHigh, params.MaxTxGas, st.msg.GasLimit)
+	}
 	// Only check transactions that are not fake
 	msg := st.msg
 	if !msg.SkipAccountChecks {

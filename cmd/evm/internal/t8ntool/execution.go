@@ -169,16 +169,35 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	// Calculate the BlobBaseFee
 	var excessBlobGas uint64
 	if pre.Env.ExcessBlobGas != nil {
-		excessBlobGas := *pre.Env.ExcessBlobGas
-		vmContext.BlobBaseFee = eip4844.CalcBlobFee(excessBlobGas)
+		excessBlobGas = *pre.Env.ExcessBlobGas
+		tempHeader := &types.Header{
+			Number:        new(big.Int).SetUint64(pre.Env.Number),
+			Time:          pre.Env.Timestamp,
+			BaseFee:       pre.Env.BaseFee,
+			ExcessBlobGas: &excessBlobGas,
+		}
+		vmContext.BlobBaseFee = eip4844.CalcBlobFee(chainConfig, tempHeader)
 	} else {
 		// If it is not explicitly defined, but we have the parent values, we try
 		// to calculate it ourselves.
 		parentExcessBlobGas := pre.Env.ParentExcessBlobGas
 		parentBlobGasUsed := pre.Env.ParentBlobGasUsed
 		if parentExcessBlobGas != nil && parentBlobGasUsed != nil {
-			excessBlobGas = eip4844.CalcExcessBlobGas(*parentExcessBlobGas, *parentBlobGasUsed)
-			vmContext.BlobBaseFee = eip4844.CalcBlobFee(excessBlobGas)
+			parentHeader := &types.Header{
+				Number:        new(big.Int).SetUint64(pre.Env.Number - 1),
+				Time:          pre.Env.ParentTimestamp,
+				BaseFee:       pre.Env.ParentBaseFee,
+				ExcessBlobGas: parentExcessBlobGas,
+				BlobGasUsed:   parentBlobGasUsed,
+			}
+			excessBlobGas = eip4844.CalcExcessBlobGas(chainConfig, parentHeader, pre.Env.Timestamp)
+			tempHeader := &types.Header{
+				Number:        new(big.Int).SetUint64(pre.Env.Number),
+				Time:          pre.Env.Timestamp,
+				BaseFee:       pre.Env.BaseFee,
+				ExcessBlobGas: &excessBlobGas,
+			}
+			vmContext.BlobBaseFee = eip4844.CalcBlobFee(chainConfig, tempHeader)
 		}
 	}
 	// If DAO is supported/enabled, we need to handle it here. In geth 'proper', it's

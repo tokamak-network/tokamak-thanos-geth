@@ -17,7 +17,9 @@
 package params
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -56,6 +58,43 @@ var (
 	devnetRegolithTime = uint64(1677984480)
 	// August 16, 2023 @ 3:34:22 am UTC
 	chaosnetRegolithTime = uint64(1692156862)
+
+	// DefaultCancunBlobConfig is the default blob configuration for the Cancun fork.
+	DefaultCancunBlobConfig = &BlobConfig{
+		Target:         3,
+		Max:            6,
+		UpdateFraction: 3338477,
+	}
+	// DefaultPragueBlobConfig is the default blob configuration for the Prague fork.
+	DefaultPragueBlobConfig = &BlobConfig{
+		Target:         6,
+		Max:            9,
+		UpdateFraction: 5007716,
+	}
+	// DefaultOsakaBlobConfig is the default blob configuration for the Osaka fork.
+	DefaultOsakaBlobConfig = &BlobConfig{
+		Target:         6,
+		Max:            9,
+		UpdateFraction: 5007716,
+	}
+	// DefaultBPO1BlobConfig is the default blob configuration for the BPO1 fork.
+	DefaultBPO1BlobConfig = &BlobConfig{
+		Target:         10,
+		Max:            15,
+		UpdateFraction: 8346193,
+	}
+	// DefaultBPO2BlobConfig is the default blob configuration for the BPO2 fork.
+	DefaultBPO2BlobConfig = &BlobConfig{
+		Target:         14,
+		Max:            21,
+		UpdateFraction: 11684671,
+	}
+	// DefaultBlobSchedule is the latest configured blob schedule for Ethereum mainnet.
+	DefaultBlobSchedule = &BlobScheduleConfig{
+		Cancun: DefaultCancunBlobConfig,
+		Prague: DefaultPragueBlobConfig,
+		Osaka:  DefaultOsakaBlobConfig,
+	}
 )
 
 func newUint64(val uint64) *uint64 { return &val }
@@ -65,272 +104,303 @@ var (
 
 	// MainnetChainConfig is the chain parameters to run a node on the main network.
 	MainnetChainConfig = &ChainConfig{
-		ChainID:                       big.NewInt(1),
-		HomesteadBlock:                big.NewInt(1_150_000),
-		DAOForkBlock:                  big.NewInt(1_920_000),
-		DAOForkSupport:                true,
-		EIP150Block:                   big.NewInt(2_463_000),
-		EIP155Block:                   big.NewInt(2_675_000),
-		EIP158Block:                   big.NewInt(2_675_000),
-		ByzantiumBlock:                big.NewInt(4_370_000),
-		ConstantinopleBlock:           big.NewInt(7_280_000),
-		PetersburgBlock:               big.NewInt(7_280_000),
-		IstanbulBlock:                 big.NewInt(9_069_000),
-		MuirGlacierBlock:              big.NewInt(9_200_000),
-		BerlinBlock:                   big.NewInt(12_244_000),
-		LondonBlock:                   big.NewInt(12_965_000),
-		ArrowGlacierBlock:             big.NewInt(13_773_000),
-		GrayGlacierBlock:              big.NewInt(15_050_000),
-		TerminalTotalDifficulty:       MainnetTerminalTotalDifficulty, // 58_750_000_000_000_000_000_000
-		TerminalTotalDifficultyPassed: true,
-		ShanghaiTime:                  newUint64(1681338455),
-		CancunTime:                    newUint64(1710338135),
-		Ethash:                        new(EthashConfig),
+		ChainID:                 big.NewInt(1),
+		HomesteadBlock:          big.NewInt(1_150_000),
+		DAOForkBlock:            big.NewInt(1_920_000),
+		DAOForkSupport:          true,
+		EIP150Block:             big.NewInt(2_463_000),
+		EIP155Block:             big.NewInt(2_675_000),
+		EIP158Block:             big.NewInt(2_675_000),
+		ByzantiumBlock:          big.NewInt(4_370_000),
+		ConstantinopleBlock:     big.NewInt(7_280_000),
+		PetersburgBlock:         big.NewInt(7_280_000),
+		IstanbulBlock:           big.NewInt(9_069_000),
+		MuirGlacierBlock:        big.NewInt(9_200_000),
+		BerlinBlock:             big.NewInt(12_244_000),
+		LondonBlock:             big.NewInt(12_965_000),
+		ArrowGlacierBlock:       big.NewInt(13_773_000),
+		GrayGlacierBlock:        big.NewInt(15_050_000),
+		TerminalTotalDifficulty: MainnetTerminalTotalDifficulty, // 58_750_000_000_000_000_000_000
+		ShanghaiTime:            newUint64(1681338455),
+		CancunTime:              newUint64(1710338135),
+		OsakaTime:               newUint64(1764798551),
+		BPO1Time:                newUint64(1765290071),
+		BPO2Time:                newUint64(1767747671),
+		DepositContractAddress:  common.HexToAddress("0x00000000219ab540356cbb839cbe05303d7705fa"),
+		Ethash:                  new(EthashConfig),
+		BlobScheduleConfig: &BlobScheduleConfig{
+			Cancun: DefaultCancunBlobConfig,
+			Prague: DefaultPragueBlobConfig,
+			Osaka:  DefaultOsakaBlobConfig,
+			BPO1:   DefaultBPO1BlobConfig,
+			BPO2:   DefaultBPO2BlobConfig,
+		},
 	}
 	// HoleskyChainConfig contains the chain parameters to run a node on the Holesky test network.
 	HoleskyChainConfig = &ChainConfig{
-		ChainID:                       big.NewInt(17000),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                true,
-		EIP150Block:                   big.NewInt(0),
-		EIP155Block:                   big.NewInt(0),
-		EIP158Block:                   big.NewInt(0),
-		ByzantiumBlock:                big.NewInt(0),
-		ConstantinopleBlock:           big.NewInt(0),
-		PetersburgBlock:               big.NewInt(0),
-		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              nil,
-		BerlinBlock:                   big.NewInt(0),
-		LondonBlock:                   big.NewInt(0),
-		ArrowGlacierBlock:             nil,
-		GrayGlacierBlock:              nil,
-		TerminalTotalDifficulty:       big.NewInt(0),
-		TerminalTotalDifficultyPassed: true,
-		MergeNetsplitBlock:            nil,
-		ShanghaiTime:                  newUint64(1696000704),
-		CancunTime:                    newUint64(1707305664),
-		Ethash:                        new(EthashConfig),
+		ChainID:                 big.NewInt(17000),
+		HomesteadBlock:          big.NewInt(0),
+		DAOForkBlock:            nil,
+		DAOForkSupport:          true,
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(0),
+		MuirGlacierBlock:        nil,
+		BerlinBlock:             big.NewInt(0),
+		LondonBlock:             big.NewInt(0),
+		ArrowGlacierBlock:       nil,
+		GrayGlacierBlock:        nil,
+		TerminalTotalDifficulty: big.NewInt(0),
+		MergeNetsplitBlock:      nil,
+		ShanghaiTime:            newUint64(1696000704),
+		CancunTime:              newUint64(1707305664),
+		DepositContractAddress:  common.HexToAddress("0x4242424242424242424242424242424242424242"),
+		Ethash:                  new(EthashConfig),
+		BlobScheduleConfig: &BlobScheduleConfig{
+			Cancun: DefaultCancunBlobConfig,
+			Prague: DefaultPragueBlobConfig,
+			Osaka:  DefaultOsakaBlobConfig,
+			BPO1:   DefaultBPO1BlobConfig,
+			BPO2:   DefaultBPO2BlobConfig,
+		},
 	}
 	// SepoliaChainConfig contains the chain parameters to run a node on the Sepolia test network.
 	SepoliaChainConfig = &ChainConfig{
-		ChainID:                       big.NewInt(11155111),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                true,
-		EIP150Block:                   big.NewInt(0),
-		EIP155Block:                   big.NewInt(0),
-		EIP158Block:                   big.NewInt(0),
-		ByzantiumBlock:                big.NewInt(0),
-		ConstantinopleBlock:           big.NewInt(0),
-		PetersburgBlock:               big.NewInt(0),
-		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              big.NewInt(0),
-		BerlinBlock:                   big.NewInt(0),
-		LondonBlock:                   big.NewInt(0),
-		ArrowGlacierBlock:             nil,
-		GrayGlacierBlock:              nil,
-		TerminalTotalDifficulty:       big.NewInt(17_000_000_000_000_000),
-		TerminalTotalDifficultyPassed: true,
-		MergeNetsplitBlock:            big.NewInt(1735371),
-		ShanghaiTime:                  newUint64(1677557088),
-		CancunTime:                    newUint64(1706655072),
-		Ethash:                        new(EthashConfig),
+		ChainID:                 big.NewInt(11155111),
+		HomesteadBlock:          big.NewInt(0),
+		DAOForkBlock:            nil,
+		DAOForkSupport:          true,
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(0),
+		MuirGlacierBlock:        big.NewInt(0),
+		BerlinBlock:             big.NewInt(0),
+		LondonBlock:             big.NewInt(0),
+		ArrowGlacierBlock:       nil,
+		GrayGlacierBlock:        nil,
+		TerminalTotalDifficulty: big.NewInt(17_000_000_000_000_000),
+		MergeNetsplitBlock:      big.NewInt(1735371),
+		ShanghaiTime:            newUint64(1677557088),
+		CancunTime:              newUint64(1706655072),
+		DepositContractAddress:  common.HexToAddress("0x7f02c3e3c98b133055b8b348b2ac625669ed295d"),
+		Ethash:                  new(EthashConfig),
+		BlobScheduleConfig: &BlobScheduleConfig{
+			Cancun: DefaultCancunBlobConfig,
+			Prague: DefaultPragueBlobConfig,
+			Osaka:  DefaultOsakaBlobConfig,
+			BPO1:   DefaultBPO1BlobConfig,
+			BPO2:   DefaultBPO2BlobConfig,
+		},
 	}
 	// GoerliChainConfig contains the chain parameters to run a node on the Görli test network.
 	GoerliChainConfig = &ChainConfig{
-		ChainID:                       big.NewInt(5),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                true,
-		EIP150Block:                   big.NewInt(0),
-		EIP155Block:                   big.NewInt(0),
-		EIP158Block:                   big.NewInt(0),
-		ByzantiumBlock:                big.NewInt(0),
-		ConstantinopleBlock:           big.NewInt(0),
-		PetersburgBlock:               big.NewInt(0),
-		IstanbulBlock:                 big.NewInt(1_561_651),
-		MuirGlacierBlock:              nil,
-		BerlinBlock:                   big.NewInt(4_460_644),
-		LondonBlock:                   big.NewInt(5_062_605),
-		ArrowGlacierBlock:             nil,
-		TerminalTotalDifficulty:       big.NewInt(10_790_000),
-		TerminalTotalDifficultyPassed: true,
-		ShanghaiTime:                  newUint64(1678832736),
-		CancunTime:                    newUint64(1705473120),
+		ChainID:                 big.NewInt(5),
+		HomesteadBlock:          big.NewInt(0),
+		DAOForkBlock:            nil,
+		DAOForkSupport:          true,
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(1_561_651),
+		MuirGlacierBlock:        nil,
+		BerlinBlock:             big.NewInt(4_460_644),
+		LondonBlock:             big.NewInt(5_062_605),
+		ArrowGlacierBlock:       nil,
+		TerminalTotalDifficulty: big.NewInt(10_790_000),
+		ShanghaiTime:            newUint64(1678832736),
+		CancunTime:              newUint64(1705473120),
 		Clique: &CliqueConfig{
 			Period: 15,
 			Epoch:  30000,
+		},
+		BlobScheduleConfig: &BlobScheduleConfig{
+			Cancun: DefaultCancunBlobConfig,
+			Prague: DefaultPragueBlobConfig,
+			Osaka:  DefaultOsakaBlobConfig,
+			BPO1:   DefaultBPO1BlobConfig,
+			BPO2:   DefaultBPO2BlobConfig,
 		},
 	}
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Ethash consensus.
 	AllEthashProtocolChanges = &ChainConfig{
-		ChainID:                       big.NewInt(1337),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                false,
-		EIP150Block:                   big.NewInt(0),
-		EIP155Block:                   big.NewInt(0),
-		EIP158Block:                   big.NewInt(0),
-		ByzantiumBlock:                big.NewInt(0),
-		ConstantinopleBlock:           big.NewInt(0),
-		PetersburgBlock:               big.NewInt(0),
-		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              big.NewInt(0),
-		BerlinBlock:                   big.NewInt(0),
-		LondonBlock:                   big.NewInt(0),
-		ArrowGlacierBlock:             big.NewInt(0),
-		GrayGlacierBlock:              big.NewInt(0),
-		MergeNetsplitBlock:            nil,
-		ShanghaiTime:                  nil,
-		CancunTime:                    nil,
-		PragueTime:                    nil,
-		VerkleTime:                    nil,
-		TerminalTotalDifficulty:       nil,
-		TerminalTotalDifficultyPassed: true,
-		Ethash:                        new(EthashConfig),
-		Clique:                        nil,
+		ChainID:                 big.NewInt(1337),
+		HomesteadBlock:          big.NewInt(0),
+		DAOForkBlock:            nil,
+		DAOForkSupport:          false,
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(0),
+		MuirGlacierBlock:        big.NewInt(0),
+		BerlinBlock:             big.NewInt(0),
+		LondonBlock:             big.NewInt(0),
+		ArrowGlacierBlock:       big.NewInt(0),
+		GrayGlacierBlock:        big.NewInt(0),
+		TerminalTotalDifficulty: big.NewInt(math.MaxInt64),
+		MergeNetsplitBlock:      nil,
+		ShanghaiTime:            nil,
+		CancunTime:              nil,
+		PragueTime:              nil,
+		OsakaTime:               nil,
+		VerkleTime:              nil,
+		Ethash:                  new(EthashConfig),
+		Clique:                  nil,
 	}
 
 	AllDevChainProtocolChanges = &ChainConfig{
-		ChainID:                       big.NewInt(1337),
-		HomesteadBlock:                big.NewInt(0),
-		EIP150Block:                   big.NewInt(0),
-		EIP155Block:                   big.NewInt(0),
-		EIP158Block:                   big.NewInt(0),
-		ByzantiumBlock:                big.NewInt(0),
-		ConstantinopleBlock:           big.NewInt(0),
-		PetersburgBlock:               big.NewInt(0),
-		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              big.NewInt(0),
-		BerlinBlock:                   big.NewInt(0),
-		LondonBlock:                   big.NewInt(0),
-		ArrowGlacierBlock:             big.NewInt(0),
-		GrayGlacierBlock:              big.NewInt(0),
-		ShanghaiTime:                  newUint64(0),
-		TerminalTotalDifficulty:       big.NewInt(0),
-		TerminalTotalDifficultyPassed: true,
+		ChainID:                 big.NewInt(1337),
+		HomesteadBlock:          big.NewInt(0),
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(0),
+		MuirGlacierBlock:        big.NewInt(0),
+		BerlinBlock:             big.NewInt(0),
+		LondonBlock:             big.NewInt(0),
+		ArrowGlacierBlock:       big.NewInt(0),
+		GrayGlacierBlock:        big.NewInt(0),
+		ShanghaiTime:            newUint64(0),
+		CancunTime:              newUint64(0),
+		TerminalTotalDifficulty: big.NewInt(0),
+		PragueTime:              newUint64(0),
+		BlobScheduleConfig: &BlobScheduleConfig{
+			Cancun: DefaultCancunBlobConfig,
+			Prague: DefaultPragueBlobConfig,
+		},
 	}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Clique consensus.
 	AllCliqueProtocolChanges = &ChainConfig{
-		ChainID:                       big.NewInt(1337),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                false,
-		EIP150Block:                   big.NewInt(0),
-		EIP155Block:                   big.NewInt(0),
-		EIP158Block:                   big.NewInt(0),
-		ByzantiumBlock:                big.NewInt(0),
-		ConstantinopleBlock:           big.NewInt(0),
-		PetersburgBlock:               big.NewInt(0),
-		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              big.NewInt(0),
-		BerlinBlock:                   big.NewInt(0),
-		LondonBlock:                   big.NewInt(0),
-		ArrowGlacierBlock:             nil,
-		GrayGlacierBlock:              nil,
-		MergeNetsplitBlock:            nil,
-		ShanghaiTime:                  nil,
-		CancunTime:                    nil,
-		PragueTime:                    nil,
-		VerkleTime:                    nil,
-		TerminalTotalDifficulty:       nil,
-		TerminalTotalDifficultyPassed: false,
-		Ethash:                        nil,
-		Clique:                        &CliqueConfig{Period: 0, Epoch: 30000},
+		ChainID:                 big.NewInt(1337),
+		HomesteadBlock:          big.NewInt(0),
+		DAOForkBlock:            nil,
+		DAOForkSupport:          false,
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(0),
+		MuirGlacierBlock:        big.NewInt(0),
+		BerlinBlock:             big.NewInt(0),
+		LondonBlock:             big.NewInt(0),
+		ArrowGlacierBlock:       nil,
+		GrayGlacierBlock:        nil,
+		MergeNetsplitBlock:      nil,
+		ShanghaiTime:            nil,
+		CancunTime:              nil,
+		PragueTime:              nil,
+		VerkleTime:              nil,
+		TerminalTotalDifficulty: nil,
+		Ethash:                  nil,
+		Clique:                  &CliqueConfig{Period: 0, Epoch: 30000},
 	}
 
 	// TestChainConfig contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers for testing purposes.
 	TestChainConfig = &ChainConfig{
-		ChainID:                       big.NewInt(1),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                false,
-		EIP150Block:                   big.NewInt(0),
-		EIP155Block:                   big.NewInt(0),
-		EIP158Block:                   big.NewInt(0),
-		ByzantiumBlock:                big.NewInt(0),
-		ConstantinopleBlock:           big.NewInt(0),
-		PetersburgBlock:               big.NewInt(0),
-		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              big.NewInt(0),
-		BerlinBlock:                   big.NewInt(0),
-		LondonBlock:                   big.NewInt(0),
-		ArrowGlacierBlock:             big.NewInt(0),
-		GrayGlacierBlock:              big.NewInt(0),
-		MergeNetsplitBlock:            nil,
-		ShanghaiTime:                  nil,
-		CancunTime:                    nil,
-		PragueTime:                    nil,
-		VerkleTime:                    nil,
-		TerminalTotalDifficulty:       nil,
-		TerminalTotalDifficultyPassed: false,
-		Ethash:                        new(EthashConfig),
-		Clique:                        nil,
+		ChainID:                 big.NewInt(1),
+		HomesteadBlock:          big.NewInt(0),
+		DAOForkBlock:            nil,
+		DAOForkSupport:          false,
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(0),
+		MuirGlacierBlock:        big.NewInt(0),
+		BerlinBlock:             big.NewInt(0),
+		LondonBlock:             big.NewInt(0),
+		ArrowGlacierBlock:       big.NewInt(0),
+		GrayGlacierBlock:        big.NewInt(0),
+		MergeNetsplitBlock:      nil,
+		ShanghaiTime:            nil,
+		CancunTime:              nil,
+		PragueTime:              nil,
+		VerkleTime:              nil,
+		TerminalTotalDifficulty: nil,
+		Ethash:                  new(EthashConfig),
+		Clique:                  nil,
 	}
 
 	// MergedTestChainConfig contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers for testing purposes.
 	MergedTestChainConfig = &ChainConfig{
-		ChainID:                       big.NewInt(1),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                false,
-		EIP150Block:                   big.NewInt(0),
-		EIP155Block:                   big.NewInt(0),
-		EIP158Block:                   big.NewInt(0),
-		ByzantiumBlock:                big.NewInt(0),
-		ConstantinopleBlock:           big.NewInt(0),
-		PetersburgBlock:               big.NewInt(0),
-		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              big.NewInt(0),
-		BerlinBlock:                   big.NewInt(0),
-		LondonBlock:                   big.NewInt(0),
-		ArrowGlacierBlock:             big.NewInt(0),
-		GrayGlacierBlock:              big.NewInt(0),
-		MergeNetsplitBlock:            big.NewInt(0),
-		ShanghaiTime:                  newUint64(0),
-		CancunTime:                    newUint64(0),
-		PragueTime:                    nil,
-		VerkleTime:                    nil,
-		TerminalTotalDifficulty:       big.NewInt(0),
-		TerminalTotalDifficultyPassed: true,
-		Ethash:                        new(EthashConfig),
-		Clique:                        nil,
+		ChainID:                 big.NewInt(1),
+		HomesteadBlock:          big.NewInt(0),
+		DAOForkBlock:            nil,
+		DAOForkSupport:          false,
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(0),
+		MuirGlacierBlock:        big.NewInt(0),
+		BerlinBlock:             big.NewInt(0),
+		LondonBlock:             big.NewInt(0),
+		ArrowGlacierBlock:       big.NewInt(0),
+		GrayGlacierBlock:        big.NewInt(0),
+		MergeNetsplitBlock:      big.NewInt(0),
+		ShanghaiTime:            newUint64(0),
+		CancunTime:              newUint64(0),
+		PragueTime:              nil,
+		VerkleTime:              nil,
+		TerminalTotalDifficulty: big.NewInt(0),
+		Ethash:                  new(EthashConfig),
+		Clique:                  nil,
 	}
 
 	// NonActivatedConfig defines the chain configuration without activating
 	// any protocol change (EIPs).
 	NonActivatedConfig = &ChainConfig{
-		ChainID:                       big.NewInt(1),
-		HomesteadBlock:                nil,
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                false,
-		EIP150Block:                   nil,
-		EIP155Block:                   nil,
-		EIP158Block:                   nil,
-		ByzantiumBlock:                nil,
-		ConstantinopleBlock:           nil,
-		PetersburgBlock:               nil,
-		IstanbulBlock:                 nil,
-		MuirGlacierBlock:              nil,
-		BerlinBlock:                   nil,
-		LondonBlock:                   nil,
-		ArrowGlacierBlock:             nil,
-		GrayGlacierBlock:              nil,
-		MergeNetsplitBlock:            nil,
-		ShanghaiTime:                  nil,
-		CancunTime:                    nil,
-		PragueTime:                    nil,
-		VerkleTime:                    nil,
-		TerminalTotalDifficulty:       nil,
-		TerminalTotalDifficultyPassed: false,
-		Ethash:                        new(EthashConfig),
-		Clique:                        nil,
+		ChainID:                 big.NewInt(1),
+		HomesteadBlock:          nil,
+		DAOForkBlock:            nil,
+		DAOForkSupport:          false,
+		EIP150Block:             nil,
+		EIP155Block:             nil,
+		EIP158Block:             nil,
+		ByzantiumBlock:          nil,
+		ConstantinopleBlock:     nil,
+		PetersburgBlock:         nil,
+		IstanbulBlock:           nil,
+		MuirGlacierBlock:        nil,
+		BerlinBlock:             nil,
+		LondonBlock:             nil,
+		ArrowGlacierBlock:       nil,
+		GrayGlacierBlock:        nil,
+		MergeNetsplitBlock:      nil,
+		ShanghaiTime:            nil,
+		CancunTime:              nil,
+		PragueTime:              nil,
+		VerkleTime:              nil,
+		TerminalTotalDifficulty: nil,
+		Ethash:                  new(EthashConfig),
+		Clique:                  nil,
 	}
 	TestRules = TestChainConfig.Rules(new(big.Int), false, 0)
 
@@ -338,7 +408,6 @@ var (
 	OptimismTestConfig = func() *ChainConfig {
 		conf := *AllCliqueProtocolChanges // copy the config
 		conf.Clique = nil
-		conf.TerminalTotalDifficultyPassed = true
 		conf.BedrockBlock = big.NewInt(5)
 		conf.Optimism = &OptimismConfig{EIP1559Elasticity: 50, EIP1559Denominator: 10}
 		return &conf
@@ -387,7 +456,13 @@ type ChainConfig struct {
 	ShanghaiTime *uint64 `json:"shanghaiTime,omitempty"` // Shanghai switch time (nil = no fork, 0 = already on shanghai)
 	CancunTime   *uint64 `json:"cancunTime,omitempty"`   // Cancun switch time (nil = no fork, 0 = already on cancun)
 	PragueTime   *uint64 `json:"pragueTime,omitempty"`   // Prague switch time (nil = no fork, 0 = already on prague)
+	OsakaTime    *uint64 `json:"osakaTime,omitempty"`    // Osaka switch time (nil = no fork, 0 = already on osaka)
 	VerkleTime   *uint64 `json:"verkleTime,omitempty"`   // Verkle switch time (nil = no fork, 0 = already on verkle)
+	BPO1Time     *uint64 `json:"bpo1Time,omitempty"`     // BPO1 switch time (nil = no fork, 0 = already on bpo1)
+	BPO2Time     *uint64 `json:"bpo2Time,omitempty"`     // BPO2 switch time (nil = no fork, 0 = already on bpo2)
+	BPO3Time     *uint64 `json:"bpo3Time,omitempty"`     // BPO3 switch time (nil = no fork, 0 = already on bpo3)
+	BPO4Time     *uint64 `json:"bpo4Time,omitempty"`     // BPO4 switch time (nil = no fork, 0 = already on bpo4)
+	BPO5Time     *uint64 `json:"bpo5Time,omitempty"`     // BPO5 switch time (nil = no fork, 0 = already on bpo5)
 
 	BedrockBlock *big.Int `json:"bedrockBlock,omitempty"` // Bedrock switch block (nil = no fork, 0 = already on optimism bedrock)
 	RegolithTime *uint64  `json:"regolithTime,omitempty"` // Regolith switch time (nil = no fork, 0 = already on optimism regolith)
@@ -402,14 +477,11 @@ type ChainConfig struct {
 	// the network that triggers the consensus upgrade.
 	TerminalTotalDifficulty *big.Int `json:"terminalTotalDifficulty,omitempty"`
 
-	// TerminalTotalDifficultyPassed is a flag specifying that the network already
-	// passed the terminal total difficulty. Its purpose is to disable legacy sync
-	// even without having seen the TTD locally (safer long term).
-	TerminalTotalDifficultyPassed bool `json:"terminalTotalDifficultyPassed,omitempty"`
-
+	DepositContractAddress common.Address `json:"depositContractAddress,omitempty"`
 	// Various consensus engines
-	Ethash *EthashConfig `json:"ethash,omitempty"`
-	Clique *CliqueConfig `json:"clique,omitempty"`
+	Ethash             *EthashConfig       `json:"ethash,omitempty"`
+	Clique             *CliqueConfig       `json:"clique,omitempty"`
+	BlobScheduleConfig *BlobScheduleConfig `json:"blobSchedule,omitempty"`
 
 	// Optimism config, nil if not active
 	Optimism *OptimismConfig `json:"optimism,omitempty"`
@@ -432,6 +504,26 @@ type CliqueConfig struct {
 // String implements the stringer interface, returning the consensus engine details.
 func (c *CliqueConfig) String() string {
 	return "clique"
+}
+
+// BlobConfig stores the configuration for blob-related parameters.
+type BlobConfig struct {
+	Target         uint64 `json:"target"`
+	Max            uint64 `json:"max"`
+	UpdateFraction uint64 `json:"baseFeeUpdateFraction"`
+}
+
+// BlobScheduleConfig stores the configuration for blob-related parameters at each fork.
+type BlobScheduleConfig struct {
+	Cancun *BlobConfig `json:"cancun,omitempty"`
+	Prague *BlobConfig `json:"prague,omitempty"`
+	Osaka  *BlobConfig `json:"osaka,omitempty"`
+	Verkle *BlobConfig `json:"verkle,omitempty"`
+	BPO1   *BlobConfig `json:"bpo1,omitempty"`
+	BPO2   *BlobConfig `json:"bpo2,omitempty"`
+	BPO3   *BlobConfig `json:"bpo3,omitempty"`
+	BPO4   *BlobConfig `json:"bpo4,omitempty"`
+	BPO5   *BlobConfig `json:"bpo5,omitempty"`
 }
 
 // OptimismConfig is the optimism config.
@@ -460,21 +552,9 @@ func (c *ChainConfig) Description() string {
 	case c.Optimism != nil:
 		banner += "Consensus: Optimism\n"
 	case c.Ethash != nil:
-		if c.TerminalTotalDifficulty == nil {
-			banner += "Consensus: Ethash (proof-of-work)\n"
-		} else if !c.TerminalTotalDifficultyPassed {
-			banner += "Consensus: Beacon (proof-of-stake), merging from Ethash (proof-of-work)\n"
-		} else {
-			banner += "Consensus: Beacon (proof-of-stake), merged from Ethash (proof-of-work)\n"
-		}
+		banner += "Consensus: Beacon (proof-of-stake), merged from Ethash (proof-of-work)\n"
 	case c.Clique != nil:
-		if c.TerminalTotalDifficulty == nil {
-			banner += "Consensus: Clique (proof-of-authority)\n"
-		} else if !c.TerminalTotalDifficultyPassed {
-			banner += "Consensus: Beacon (proof-of-stake), merging from Clique (proof-of-authority)\n"
-		} else {
-			banner += "Consensus: Beacon (proof-of-stake), merged from Clique (proof-of-authority)\n"
-		}
+		banner += "Consensus: Beacon (proof-of-stake), merged from Clique (proof-of-authority)\n"
 	default:
 		banner += "Consensus: unknown\n"
 	}
@@ -509,17 +589,12 @@ func (c *ChainConfig) Description() string {
 	banner += "\n"
 
 	// Add a special section for the merge as it's non-obvious
-	if c.TerminalTotalDifficulty == nil {
-		banner += "The Merge is not yet available for this network!\n"
-		banner += " - Hard-fork specification: https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/paris.md\n"
-	} else {
-		banner += "Merge configured:\n"
-		banner += " - Hard-fork specification:    https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/paris.md\n"
-		banner += fmt.Sprintf(" - Network known to be merged: %v\n", c.TerminalTotalDifficultyPassed)
-		banner += fmt.Sprintf(" - Total terminal difficulty:  %v\n", c.TerminalTotalDifficulty)
-		if c.MergeNetsplitBlock != nil {
-			banner += fmt.Sprintf(" - Merge netsplit block:       #%-8v\n", c.MergeNetsplitBlock)
-		}
+	banner += "Merge configured:\n"
+	banner += " - Hard-fork specification:    https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/paris.md\n"
+	banner += " - Network known to be merged\n"
+	banner += fmt.Sprintf(" - Total terminal difficulty:  %v\n", c.TerminalTotalDifficulty)
+	if c.MergeNetsplitBlock != nil {
+		banner += fmt.Sprintf(" - Merge netsplit block:       #%-8v\n", c.MergeNetsplitBlock)
 	}
 	banner += "\n"
 
@@ -533,6 +608,24 @@ func (c *ChainConfig) Description() string {
 	}
 	if c.PragueTime != nil {
 		banner += fmt.Sprintf(" - Prague:                      @%-10v\n", *c.PragueTime)
+	}
+	if c.OsakaTime != nil {
+		banner += fmt.Sprintf(" - Osaka:                      @%-10v\n", *c.OsakaTime)
+	}
+	if c.BPO1Time != nil {
+		banner += fmt.Sprintf(" - BPO1:                      @%-10v\n", *c.BPO1Time)
+	}
+	if c.BPO2Time != nil {
+		banner += fmt.Sprintf(" - BPO2:                      @%-10v\n", *c.BPO2Time)
+	}
+	if c.BPO3Time != nil {
+		banner += fmt.Sprintf(" - BPO3:                      @%-10v\n", *c.BPO3Time)
+	}
+	if c.BPO4Time != nil {
+		banner += fmt.Sprintf(" - BPO4:                      @%-10v\n", *c.BPO4Time)
+	}
+	if c.BPO5Time != nil {
+		banner += fmt.Sprintf(" - BPO5:                      @%-10v\n", *c.BPO5Time)
 	}
 	if c.VerkleTime != nil {
 		banner += fmt.Sprintf(" - Verkle:                      @%-10v\n", *c.VerkleTime)
@@ -765,7 +858,13 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "shanghaiTime", timestamp: c.ShanghaiTime},
 		{name: "cancunTime", timestamp: c.CancunTime, optional: true},
 		{name: "pragueTime", timestamp: c.PragueTime, optional: true},
+		{name: "osakaTime", timestamp: c.OsakaTime, optional: true},
 		{name: "verkleTime", timestamp: c.VerkleTime, optional: true},
+		{name: "bpo1", timestamp: c.BPO1Time, optional: true},
+		{name: "bpo2", timestamp: c.BPO2Time, optional: true},
+		{name: "bpo3", timestamp: c.BPO3Time, optional: true},
+		{name: "bpo4", timestamp: c.BPO4Time, optional: true},
+		{name: "bpo5", timestamp: c.BPO5Time, optional: true},
 	} {
 		if lastFork.name != "" {
 			switch {
@@ -800,6 +899,46 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		if !cur.optional || (cur.block != nil || cur.timestamp != nil) {
 			lastFork = cur
 		}
+	}
+	// Validate blob schedule entries for configured forks (non-Optimism chains only).
+	// OP-Stack chains short-circuit blob logic and must NOT require a blob schedule.
+	if !c.IsOptimism() {
+		bsc := c.BlobScheduleConfig
+		if bsc == nil {
+			bsc = new(BlobScheduleConfig)
+		}
+		for _, cur := range []struct {
+			name      string
+			timestamp *uint64
+			config    *BlobConfig
+		}{
+			{name: "cancun", timestamp: c.CancunTime, config: bsc.Cancun},
+			{name: "prague", timestamp: c.PragueTime, config: bsc.Prague},
+			{name: "osaka", timestamp: c.OsakaTime, config: bsc.Osaka},
+			{name: "bpo1", timestamp: c.BPO1Time, config: bsc.BPO1},
+			{name: "bpo2", timestamp: c.BPO2Time, config: bsc.BPO2},
+			{name: "bpo3", timestamp: c.BPO3Time, config: bsc.BPO3},
+			{name: "bpo4", timestamp: c.BPO4Time, config: bsc.BPO4},
+			{name: "bpo5", timestamp: c.BPO5Time, config: bsc.BPO5},
+		} {
+			if cur.config != nil {
+				if err := cur.config.validate(); err != nil {
+					return fmt.Errorf("invalid chain configuration in blobSchedule for fork %q: %v", cur.name, err)
+				}
+			}
+			if cur.timestamp != nil {
+				if cur.config == nil {
+					return fmt.Errorf("invalid chain configuration: missing entry for fork %q in blobSchedule", cur.name)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (bc *BlobConfig) validate() error {
+	if bc.UpdateFraction == 0 {
+		return errors.New("update fraction must be defined and non-zero")
 	}
 	return nil
 }
@@ -901,6 +1040,18 @@ func (c *ChainConfig) LatestFork(time uint64) forks.Fork {
 	london := c.LondonBlock
 
 	switch {
+	case c.IsBPO5(london, time):
+		return forks.BPO5
+	case c.IsBPO4(london, time):
+		return forks.BPO4
+	case c.IsBPO3(london, time):
+		return forks.BPO3
+	case c.IsBPO2(london, time):
+		return forks.BPO2
+	case c.IsBPO1(london, time):
+		return forks.BPO1
+	case c.IsOsaka(london, time):
+		return forks.Osaka
 	case c.IsPrague(london, time):
 		return forks.Prague
 	case c.IsCancun(london, time):
@@ -1080,4 +1231,93 @@ func (c *ChainConfig) Rules(num *big.Int, isMerge bool, timestamp uint64) Rules 
 		IsOptimismCanyon:   isMerge && c.IsOptimismCanyon(timestamp),
 		IsOptimismFjord:    isMerge && c.IsOptimismFjord(timestamp),
 	}
+}
+
+// BlobConfig returns the blob config associated with the provided fork.
+func (c *ChainConfig) BlobConfig(fork forks.Fork) *BlobConfig {
+	// TODO: https://github.com/ethereum-optimism/op-geth/issues/685
+	// This function has a bug.
+	switch fork {
+	case forks.BPO5:
+		return c.BlobScheduleConfig.BPO5
+	case forks.BPO4:
+		return c.BlobScheduleConfig.BPO4
+	case forks.BPO3:
+		return c.BlobScheduleConfig.BPO3
+	case forks.BPO2:
+		return c.BlobScheduleConfig.BPO2
+	case forks.BPO1:
+		return c.BlobScheduleConfig.BPO1
+	case forks.Osaka:
+		return c.BlobScheduleConfig.Osaka
+	case forks.Prague:
+		return c.BlobScheduleConfig.Prague
+	case forks.Cancun:
+		return c.BlobScheduleConfig.Cancun
+	default:
+		return nil
+	}
+}
+
+// Timestamp returns the timestamp of the specified fork. Returns nil if
+// the fork isn't defined or isn't a time-based fork.
+func (c *ChainConfig) Timestamp(fork forks.Fork) *uint64 {
+	switch {
+	case fork == forks.BPO5:
+		return c.BPO5Time
+	case fork == forks.BPO4:
+		return c.BPO4Time
+	case fork == forks.BPO3:
+		return c.BPO3Time
+	case fork == forks.BPO2:
+		return c.BPO2Time
+	case fork == forks.BPO1:
+		return c.BPO1Time
+	case fork == forks.Osaka:
+		return c.OsakaTime
+	case fork == forks.Prague:
+		return c.PragueTime
+	case fork == forks.Cancun:
+		return c.CancunTime
+	case fork == forks.Shanghai:
+		return c.ShanghaiTime
+	default:
+		return nil
+	}
+}
+
+// IsOsaka returns whether time is either equal to the Osaka fork time or greater.
+func (c *ChainConfig) IsOsaka(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.OsakaTime, time)
+}
+
+// IsBPO1 returns whether time is either equal to the BPO1 fork time or greater.
+func (c *ChainConfig) IsBPO1(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.BPO1Time, time)
+}
+
+// IsBPO2 returns whether time is either equal to the BPO2 fork time or greater.
+func (c *ChainConfig) IsBPO2(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.BPO2Time, time)
+}
+
+// IsBPO3 returns whether time is either equal to the BPO3 fork time or greater.
+func (c *ChainConfig) IsBPO3(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.BPO3Time, time)
+}
+
+// IsBPO4 returns whether time is either equal to the BPO4 fork time or greater.
+func (c *ChainConfig) IsBPO4(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.BPO4Time, time)
+}
+
+// IsBPO5 returns whether time is either equal to the BPO5 fork time or greater.
+func (c *ChainConfig) IsBPO5(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.BPO5Time, time)
+}
+
+// ActiveSystemContracts returns the system contracts that are active at the given timestamp.
+func (c *ChainConfig) ActiveSystemContracts(time uint64) map[string]common.Address {
+	// Returns empty map for now, can be extended later with actual system contracts
+	return make(map[string]common.Address)
 }

@@ -4,7 +4,7 @@ ARG VERSION=""
 ARG BUILDNUM=""
 
 # Build Geth in a stock Go builder container
-FROM --platform=$BUILDPLATFORM golang:1.21-bookworm as builder
+FROM --platform=$BUILDPLATFORM golang:1.24-bookworm as builder
 
 RUN apt-get update
 RUN apt install -y \
@@ -19,11 +19,12 @@ COPY go.sum /go-ethereum/
 RUN cd /go-ethereum && go mod download
 
 ADD . /go-ethereum
-RUN cd /go-ethereum && go run build/ci.go install -arch arm -cc arm-linux-gnueabi-gcc -static ./cmd/geth
+RUN cd /go-ethereum && go run build/ci.go install -arch arm64 -cc aarch64-linux-gnu-gcc -static ./cmd/geth
 
 # Pull Geth into a second stage deploy alpine container
 FROM alpine:latest
 
+RUN apk add --no-cache ca-certificates libstdc++ libgcc
 COPY --from=builder /go-ethereum/build/bin/geth /usr/local/bin/
 
 EXPOSE 8545 8546 30303 30303/udp

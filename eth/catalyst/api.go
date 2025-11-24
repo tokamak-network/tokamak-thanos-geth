@@ -805,7 +805,7 @@ func (api *ConsensusAPI) heartbeat() {
 
 		// If there have been no updates for the past while, warn the user
 		// that the beacon client is probably offline
-		if api.eth.BlockChain().Config().TerminalTotalDifficultyPassed || api.eth.Merger().TDDReached() {
+		if api.eth.Merger().TDDReached() {
 			if time.Since(lastForkchoiceUpdate) <= beaconUpdateConsensusTimeout || time.Since(lastNewPayloadUpdate) <= beaconUpdateConsensusTimeout {
 				offlineLogged = time.Time{}
 				continue
@@ -908,4 +908,32 @@ func getBody(block *types.Block) *engine.ExecutionPayloadBodyV1 {
 		TransactionData: txs,
 		Withdrawals:     withdrawals,
 	}
+}
+
+// convertRequests converts a hex requests slice to plain [][]byte.
+func convertRequests(hex []hexutil.Bytes) [][]byte {
+	if hex == nil {
+		return nil
+	}
+	req := make([][]byte, len(hex))
+	for i := range hex {
+		req[i] = hex[i]
+	}
+	return req
+}
+
+// validateRequests checks that requests are ordered by their type and are not empty.
+func validateRequests(requests [][]byte) error {
+	for i, req := range requests {
+		// No empty requests.
+		if len(req) < 2 {
+			return fmt.Errorf("empty request: %v", req)
+		}
+		// Check that requests are ordered by their type.
+		// Each type must appear only once.
+		if i > 0 && req[0] <= requests[i-1][0] {
+			return fmt.Errorf("invalid request order: %v", req)
+		}
+	}
+	return nil
 }

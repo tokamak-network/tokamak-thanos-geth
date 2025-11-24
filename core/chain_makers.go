@@ -384,10 +384,10 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		} else if len(receipts) < len(txs) {
 			txs = txs[:len(receipts)]
 		}
-		var blobGasPrice *big.Int
-		if block.ExcessBlobGas() != nil {
-			blobGasPrice = eip4844.CalcBlobFee(*block.ExcessBlobGas())
-		}
+	var blobGasPrice *big.Int
+	if block.ExcessBlobGas() != nil {
+		blobGasPrice = eip4844.CalcBlobFee(config, block.Header())
+	}
 		if err := receipts.DeriveFields(config, block.Hash(), block.NumberU64(), block.Time(), block.BaseFee(), blobGasPrice, txs); err != nil {
 			panic(err)
 		}
@@ -437,15 +437,7 @@ func (cm *chainMaker) makeHeader(parent *types.Block, state *state.StateDB, engi
 		}
 	}
 	if cm.config.IsCancun(header.Number, header.Time) {
-		var (
-			parentExcessBlobGas uint64
-			parentBlobGasUsed   uint64
-		)
-		if parent.ExcessBlobGas() != nil {
-			parentExcessBlobGas = *parent.ExcessBlobGas()
-			parentBlobGasUsed = *parent.BlobGasUsed()
-		}
-		excessBlobGas := eip4844.CalcExcessBlobGas(parentExcessBlobGas, parentBlobGasUsed)
+		excessBlobGas := eip4844.CalcExcessBlobGas(cm.config, parent.Header(), header.Time)
 		header.ExcessBlobGas = &excessBlobGas
 		header.BlobGasUsed = new(uint64)
 		header.ParentBeaconRoot = new(common.Hash)

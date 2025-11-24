@@ -57,6 +57,6 @@ jobs:
       - name: Create and push manifest
         uses: Noelware/docker-manifest-action@master
         with:
-          inputs: tokamaknetwork/thanos-op-geth:${{ steps.extractver.outputs.RELEASE }}
-          images: tokamaknetwork/thanos-op-geth:${{ steps.extractver.outputs.RELEASE }}-amd64,tokamaknetwork/thanos-op-geth:${{ steps.extractver.outputs.RELEASE }}-arm64
+          tags: tokamaknetwork/thanos-op-geth:${{ steps.extractver.outputs.RELEASE }}
+          inputs: tokamaknetwork/thanos-op-geth:${{ steps.extractver.outputs.RELEASE }}-amd64,tokamaknetwork/thanos-op-geth:${{ steps.extractver.outputs.RELEASE }}-arm64
           push: true

@@ -246,12 +246,8 @@ func (args *TransactionArgs) setFeeDefaults(ctx context.Context, b Backend) erro
 func (args *TransactionArgs) setCancunFeeDefaults(ctx context.Context, head *types.Header, b Backend) error {
 	// Set maxFeePerBlobGas if it is missing.
 	if args.BlobHashes != nil && args.BlobFeeCap == nil {
-		var excessBlobGas uint64
-		if head.ExcessBlobGas != nil {
-			excessBlobGas = *head.ExcessBlobGas
-		}
 		// ExcessBlobGas must be set for a Cancun block.
-		blobBaseFee := eip4844.CalcBlobFee(excessBlobGas)
+		blobBaseFee := eip4844.CalcBlobFee(b.ChainConfig(), head)
 		// Set the max fee to be 2 times larger than the previous block's blob base fee.
 		// The additional slack allows the tx to not become invalidated if the base
 		// fee is rising.
@@ -310,38 +306,73 @@ func (args *TransactionArgs) setBlobTxSidecar(ctx context.Context, b Backend) er
 		return errors.New(`blob commitments provided while proofs were not`)
 	}
 
-	// len(blobs) == len(commitments) == len(proofs) == len(hashes)
+	// Decide sidecar version based on chain config (post-Osaka => Version1 cell proofs).
+	sidecarVersion := types.BlobSidecarVersion0
+	if head := b.CurrentHeader(); head != nil {
+		if cfg := b.ChainConfig(); cfg != nil && cfg.IsOsaka(head.Number, head.Time) {
+			sidecarVersion = types.BlobSidecarVersion1
+		}
+	}
+
+	// len(blobs) == len(commitments) == len(hashes)
 	if args.Commitments != nil && len(args.Commitments) != n {
 		return fmt.Errorf("number of blobs and commitments mismatch (have=%d, want=%d)", len(args.Commitments), n)
-	}
-	if args.Proofs != nil && len(args.Proofs) != n {
-		return fmt.Errorf("number of blobs and proofs mismatch (have=%d, want=%d)", len(args.Proofs), n)
 	}
 	if args.BlobHashes != nil && len(args.BlobHashes) != n {
 		return fmt.Errorf("number of blobs and hashes mismatch (have=%d, want=%d)", len(args.BlobHashes), n)
 	}
 
+	// Proof length expectations (V0: 1 per blob, V1: 128 per blob)
+	proofLen := n
+	if sidecarVersion == types.BlobSidecarVersion1 {
+		proofLen = n * kzg4844.CellProofsPerBlob
+	}
+	if args.Proofs != nil && len(args.Proofs) != proofLen {
+		// Allow legacy V0 format to pass through by unsetting commitments/proofs to regenerate.
+		if len(args.Proofs) != n {
+			return fmt.Errorf("number of blobs and proofs mismatch (have=%d, want=%d)", len(args.Proofs), proofLen)
+		}
+		log.Debug("Unset legacy commitments and proofs", "blobs", n, "proofs", len(args.Proofs))
+		args.Commitments, args.Proofs = nil, nil
+	}
+
+	// Generate or verify commitments and proofs
 	if args.Commitments == nil {
-		// Generate commitment and proof.
 		commitments := make([]kzg4844.Commitment, n)
-		proofs := make([]kzg4844.Proof, n)
+		proofs := make([]kzg4844.Proof, 0, proofLen)
 		for i, b := range args.Blobs {
-			c, err := kzg4844.BlobToCommitment(b)
+			c, err := kzg4844.BlobToCommitment(&b)
 			if err != nil {
 				return fmt.Errorf("blobs[%d]: error computing commitment: %v", i, err)
 			}
 			commitments[i] = c
-			p, err := kzg4844.ComputeBlobProof(b, c)
-			if err != nil {
-				return fmt.Errorf("blobs[%d]: error computing proof: %v", i, err)
+			switch sidecarVersion {
+			case types.BlobSidecarVersion0:
+				p, err := kzg4844.ComputeBlobProof(&b, c)
+				if err != nil {
+					return fmt.Errorf("blobs[%d]: error computing proof: %v", i, err)
+				}
+				proofs = append(proofs, p)
+			case types.BlobSidecarVersion1:
+				ps, err := kzg4844.ComputeCellProofs(&b)
+				if err != nil {
+					return fmt.Errorf("blobs[%d]: error computing proof: %v", i, err)
+				}
+				proofs = append(proofs, ps...)
 			}
-			proofs[i] = p
 		}
 		args.Commitments = commitments
 		args.Proofs = proofs
 	} else {
-		for i, b := range args.Blobs {
-			if err := kzg4844.VerifyBlobProof(b, args.Commitments[i], args.Proofs[i]); err != nil {
+		switch sidecarVersion {
+		case types.BlobSidecarVersion0:
+			for i, b := range args.Blobs {
+				if err := kzg4844.VerifyBlobProof(&b, args.Commitments[i], args.Proofs[i]); err != nil {
+					return fmt.Errorf("failed to verify blob proof: %v", err)
+				}
+			}
+		case types.BlobSidecarVersion1:
+			if err := kzg4844.VerifyCellProofs(args.Blobs, args.Commitments, args.Proofs); err != nil {
 				return fmt.Errorf("failed to verify blob proof: %v", err)
 			}
 		}

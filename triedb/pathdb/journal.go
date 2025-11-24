@@ -358,6 +358,15 @@ func (db *Database) Journal(root common.Hash) error {
 	if db.readOnly {
 		return errDatabaseReadOnly
 	}
+	// Forcibly sync the ancient store before persisting the in-memory layers.
+	// This prevents a rare edge case where recent history writes are truncated
+	// on restart, causing history to fall behind the disk layer and leading to
+	// ancestor resolution failures.
+	if db.freezer != nil {
+		if err := db.freezer.Sync(); err != nil {
+			return err
+		}
+	}
 	// Firstly write out the metadata of journal
 	journal := new(bytes.Buffer)
 	if err := rlp.Encode(journal, journalVersion); err != nil {
