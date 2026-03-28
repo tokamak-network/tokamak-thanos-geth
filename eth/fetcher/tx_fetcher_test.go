@@ -1640,34 +1640,34 @@ func TestBlobTransactionAnnounce(t *testing.T) {
 		steps: []interface{}{
 			// Initial announcement to get something into the waitlist
 			doTxNotify{peer: "A", hashes: []common.Hash{{0x01}, {0x02}}, types: []byte{types.LegacyTxType, types.LegacyTxType}, sizes: []uint32{111, 222}},
-			isWaiting(map[string][]announce{
+			isWaitingWithMeta(map[string][]announce{
 				"A": {
-					{common.Hash{0x01}, types.LegacyTxType, 111},
-					{common.Hash{0x02}, types.LegacyTxType, 222},
+					{common.Hash{0x01}, typeptr(types.LegacyTxType), sizeptr(111)},
+					{common.Hash{0x02}, typeptr(types.LegacyTxType), sizeptr(222)},
 				},
 			}),
 			// Announce a blob transaction
 			doTxNotify{peer: "B", hashes: []common.Hash{{0x03}}, types: []byte{types.BlobTxType}, sizes: []uint32{333}},
-			isWaiting(map[string][]announce{
+			isWaitingWithMeta(map[string][]announce{
 				"A": {
-					{common.Hash{0x01}, types.LegacyTxType, 111},
-					{common.Hash{0x02}, types.LegacyTxType, 222},
+					{common.Hash{0x01}, typeptr(types.LegacyTxType), sizeptr(111)},
+					{common.Hash{0x02}, typeptr(types.LegacyTxType), sizeptr(222)},
 				},
 				"B": {
-					{common.Hash{0x03}, types.BlobTxType, 333},
+					{common.Hash{0x03}, typeptr(types.BlobTxType), sizeptr(333)},
 				},
 			}),
 			doWait{time: 0, step: true}, // zero time, but the blob fetching should be scheduled
-			isWaiting(map[string][]announce{
+			isWaitingWithMeta(map[string][]announce{
 				"A": {
-					{common.Hash{0x01}, types.LegacyTxType, 111},
-					{common.Hash{0x02}, types.LegacyTxType, 222},
+					{common.Hash{0x01}, typeptr(types.LegacyTxType), sizeptr(111)},
+					{common.Hash{0x02}, typeptr(types.LegacyTxType), sizeptr(222)},
 				},
 			}),
-			isScheduled{
+			isScheduledWithMeta{
 				tracking: map[string][]announce{
 					"B": {
-						{common.Hash{0x03}, types.BlobTxType, 333},
+						{common.Hash{0x03}, typeptr(types.BlobTxType), sizeptr(333)},
 					},
 				},
 				fetching: map[string][]common.Hash{ // Depends on deterministic test randomizer
@@ -1676,14 +1676,14 @@ func TestBlobTransactionAnnounce(t *testing.T) {
 			},
 			doWait{time: txArriveTimeout, step: true}, // zero time, but the blob fetching should be scheduled
 			isWaiting(nil),
-			isScheduled{
+			isScheduledWithMeta{
 				tracking: map[string][]announce{
 					"A": {
-						{common.Hash{0x01}, types.LegacyTxType, 111},
-						{common.Hash{0x02}, types.LegacyTxType, 222},
+						{common.Hash{0x01}, typeptr(types.LegacyTxType), sizeptr(111)},
+						{common.Hash{0x02}, typeptr(types.LegacyTxType), sizeptr(222)},
 					},
 					"B": {
-						{common.Hash{0x03}, types.BlobTxType, 333},
+						{common.Hash{0x03}, typeptr(types.BlobTxType), sizeptr(333)},
 					},
 				},
 				fetching: map[string][]common.Hash{ // Depends on deterministic test randomizer
@@ -1712,13 +1712,13 @@ func TestTransactionFetcherDropAlternates(t *testing.T) {
 			doWait{time: txArriveTimeout, step: true},
 			doTxNotify{peer: "B", hashes: []common.Hash{testTxsHashes[0]}, types: []byte{testTxs[0].Type()}, sizes: []uint32{uint32(testTxs[0].Size())}},
 
-			isScheduled{
+			isScheduledWithMeta{
 				tracking: map[string][]announce{
 					"A": {
-						{testTxsHashes[0], testTxs[0].Type(), uint32(testTxs[0].Size())},
+						{testTxsHashes[0], typeptr(testTxs[0].Type()), sizeptr(uint32(testTxs[0].Size()))},
 					},
 					"B": {
-						{testTxsHashes[0], testTxs[0].Type(), uint32(testTxs[0].Size())},
+						{testTxsHashes[0], typeptr(testTxs[0].Type()), sizeptr(uint32(testTxs[0].Size()))},
 					},
 				},
 				fetching: map[string][]common.Hash{
@@ -1727,10 +1727,10 @@ func TestTransactionFetcherDropAlternates(t *testing.T) {
 			},
 			doDrop("B"),
 
-			isScheduled{
+			isScheduledWithMeta{
 				tracking: map[string][]announce{
 					"A": {
-						{testTxsHashes[0], testTxs[0].Type(), uint32(testTxs[0].Size())},
+						{testTxsHashes[0], typeptr(testTxs[0].Type()), sizeptr(uint32(testTxs[0].Size()))},
 					},
 				},
 				fetching: map[string][]common.Hash{
@@ -1764,7 +1764,7 @@ func makeInvalidBlobTx() *types.Transaction {
 		BlobFeeCap: uint256.NewInt(200),
 		BlobHashes: []common.Hash{blobHash},
 		Value:      uint256.NewInt(100),
-		Sidecar:    types.NewBlobTxSidecar(types.BlobSidecarVersion1, []kzg4844.Blob{*blob}, []kzg4844.Commitment{commitment}, cellProof),
+		Sidecar:    &types.BlobTxSidecar{Version: types.BlobSidecarVersion1, Blobs: []kzg4844.Blob{*blob}, Commitments: []kzg4844.Commitment{commitment}, Proofs: cellProof},
 	}
 	return types.MustSignNewTx(key, types.LatestSigner(params.MainnetChainConfig), blobtx)
 }
@@ -1803,25 +1803,25 @@ func TestTransactionProtocolViolation(t *testing.T) {
 				types:  []byte{types.LegacyTxType, types.BlobTxType, types.LegacyTxType},
 				sizes:  []uint32{uint32(testTxs[0].Size()), uint32(badTx.Size()), uint32(testTxs[1].Size())},
 			},
-			isWaiting(map[string][]announce{
+			isWaitingWithMeta(map[string][]announce{
 				"A": {
-					{testTxs[0].Hash(), types.LegacyTxType, uint32(testTxs[0].Size())},
-					{badTx.Hash(), types.BlobTxType, uint32(badTx.Size())},
-					{testTxs[1].Hash(), types.LegacyTxType, uint32(testTxs[1].Size())},
+					{testTxs[0].Hash(), typeptr(types.LegacyTxType), sizeptr(uint32(testTxs[0].Size()))},
+					{badTx.Hash(), typeptr(types.BlobTxType), sizeptr(uint32(badTx.Size()))},
+					{testTxs[1].Hash(), typeptr(types.LegacyTxType), sizeptr(uint32(testTxs[1].Size()))},
 				},
 			}),
 			doWait{time: 0, step: true}, // zero time, but the blob fetching should be scheduled
 
-			isWaiting(map[string][]announce{
+			isWaitingWithMeta(map[string][]announce{
 				"A": {
-					{testTxs[0].Hash(), types.LegacyTxType, uint32(testTxs[0].Size())},
-					{testTxs[1].Hash(), types.LegacyTxType, uint32(testTxs[1].Size())},
+					{testTxs[0].Hash(), typeptr(types.LegacyTxType), sizeptr(uint32(testTxs[0].Size()))},
+					{testTxs[1].Hash(), typeptr(types.LegacyTxType), sizeptr(uint32(testTxs[1].Size()))},
 				},
 			}),
-			isScheduled{
+			isScheduledWithMeta{
 				tracking: map[string][]announce{
 					"A": {
-						{badTx.Hash(), types.BlobTxType, uint32(badTx.Size())},
+						{badTx.Hash(), typeptr(types.BlobTxType), sizeptr(uint32(badTx.Size()))},
 					},
 				},
 				fetching: map[string][]common.Hash{
@@ -1836,10 +1836,10 @@ func TestTransactionProtocolViolation(t *testing.T) {
 			},
 			// Some internal traces are left and will be cleaned by a following drop
 			// operation.
-			isWaiting(map[string][]announce{
+			isWaitingWithMeta(map[string][]announce{
 				"A": {
-					{testTxs[0].Hash(), types.LegacyTxType, uint32(testTxs[0].Size())},
-					{testTxs[1].Hash(), types.LegacyTxType, uint32(testTxs[1].Size())},
+					{testTxs[0].Hash(), typeptr(types.LegacyTxType), sizeptr(uint32(testTxs[0].Size()))},
+					{testTxs[1].Hash(), typeptr(types.LegacyTxType), sizeptr(uint32(testTxs[1].Size()))},
 				},
 			}),
 			isScheduled{},
