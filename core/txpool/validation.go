@@ -102,6 +102,9 @@ func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types
 	if !opts.Config.IsCancun(head.Number, head.Time) && tx.Type() == types.BlobTxType {
 		return fmt.Errorf("%w: type %d rejected, pool not yet in Cancun", core.ErrTxTypeNotSupported, tx.Type())
 	}
+	if !opts.Config.IsPrague(head.Number, head.Time) && tx.Type() == types.SetCodeTxType {
+		return fmt.Errorf("%w: type %d rejected, pool not yet in Prague", core.ErrTxTypeNotSupported, tx.Type())
+	}
 	// Check whether the init code size has been exceeded
 	if opts.Config.IsShanghai(head.Number, head.Time) && tx.To() == nil && len(tx.Data()) > params.MaxInitCodeSize {
 		return fmt.Errorf("%w: code size %v, limit %v", core.ErrMaxInitCodeSizeExceeded, len(tx.Data()), params.MaxInitCodeSize)
@@ -136,7 +139,7 @@ func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types
 	}
 	// Ensure the transaction has more gas than the bare minimum needed to cover
 	// the transaction metadata
-	intrGas, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, true, opts.Config.IsIstanbul(head.Number), opts.Config.IsShanghai(head.Number, head.Time))
+	intrGas, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.SetCodeAuthorizations(), tx.To() == nil, true, opts.Config.IsIstanbul(head.Number), opts.Config.IsShanghai(head.Number, head.Time))
 	if err != nil {
 		return err
 	}
@@ -181,6 +184,11 @@ func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types
 			return validateBlobSidecarOsaka(sidecar, hashes)
 		}
 		return validateBlobSidecarLegacy(sidecar, hashes)
+	}
+	if tx.Type() == types.SetCodeTxType {
+		if len(tx.SetCodeAuthorizations()) == 0 {
+			return fmt.Errorf("set code tx must have at least one authorization tuple")
+		}
 	}
 	return nil
 }
