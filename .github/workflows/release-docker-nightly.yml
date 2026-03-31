@@ -67,11 +67,12 @@ jobs:
           password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN_SECRET }}
 
       - name: Create and push manifest
-        uses: Noelware/docker-manifest-action@master
-        with:
-          tags: tokamaknetwork/thanos-op-geth:nightly, tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}
-          inputs: tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag}}-amd64,tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-arm64
-          push: true
+        run: |
+          docker buildx imagetools create \
+            --tag tokamaknetwork/thanos-op-geth:nightly \
+            --tag tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }} \
+            tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-amd64 \
+            tokamaknetwork/thanos-op-geth:${{ needs.version.outputs.nightly-docker-tag }}-arm64
 
   update-kustomize:
     name: Update image version in kustomize manifest file(nightly)
