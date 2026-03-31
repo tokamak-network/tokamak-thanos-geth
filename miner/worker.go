@@ -18,6 +18,7 @@ package miner
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
@@ -976,10 +977,11 @@ type generateParams struct {
 	beaconRoot  *common.Hash      // The beacon root (cancun field).
 	noTxs       bool              // Flag whether an empty block without any transaction is expected
 
-	txs       types.Transactions // Deposit transactions to include at the start of the block
-	gasLimit  *uint64            // Optional gas limit override
-	interrupt *atomic.Int32      // Optional interruption signal to pass down to worker.generateWork
-	isUpdate  bool               // Optional flag indicating that this is building a discardable update
+	txs           types.Transactions // Deposit transactions to include at the start of the block
+	gasLimit      *uint64            // Optional gas limit override
+	eip1559Params []byte             // Holocene: 8-byte EIP-1559 params for block extraData
+	interrupt     *atomic.Int32      // Optional interruption signal to pass down to worker.generateWork
+	isUpdate      bool               // Optional flag indicating that this is building a discardable update
 }
 
 // validateParams validates the given parameters.
@@ -1048,7 +1050,20 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 		Coinbase:   genParams.coinbase,
 	}
 	// Set the extra field.
-	if len(w.extra) != 0 && w.chainConfig.Optimism == nil { // Optimism chains must not set any extra data.
+	if len(genParams.eip1559Params) == 8 {
+		// Holocene: set extraData to [0x00][denom_uint32_be][elasticity_uint32_be] (9 bytes).
+		// If denominator is 0 (SystemConfig not yet updated), fall back to chainConfig values,
+		// matching the CL translation logic in engine_consolidate.go.
+		params := genParams.eip1559Params
+		denom := binary.BigEndian.Uint32(params[0:4])
+		if denom == 0 && w.chainConfig.Optimism != nil {
+			translated := make([]byte, 8)
+			binary.BigEndian.PutUint32(translated[0:4], uint32(w.chainConfig.Optimism.EIP1559DenominatorCanyon))
+			binary.BigEndian.PutUint32(translated[4:8], uint32(w.chainConfig.Optimism.EIP1559Elasticity))
+			params = translated
+		}
+		header.Extra = append([]byte{0x00}, params...)
+	} else if len(w.extra) != 0 && w.chainConfig.Optimism == nil { // Optimism chains must not set any extra data.
 		header.Extra = w.extra
 	}
 	// Set the randomness field from the beacon chain if it's available.

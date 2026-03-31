@@ -45,9 +45,10 @@ type BuildPayloadArgs struct {
 	BeaconRoot   *common.Hash          // The provided beaconRoot (Cancun)
 	Version      engine.PayloadVersion // Versioning byte for payload id calculation.
 
-	NoTxPool     bool                 // Optimism addition: option to disable tx pool contents from being included
-	Transactions []*types.Transaction // Optimism addition: txs forced into the block via engine API
-	GasLimit     *uint64              // Optimism addition: override gas limit of the block to build
+	NoTxPool      bool                 // Optimism addition: option to disable tx pool contents from being included
+	Transactions  []*types.Transaction // Optimism addition: txs forced into the block via engine API
+	GasLimit      *uint64              // Optimism addition: override gas limit of the block to build
+	EIP1559Params []byte               // Holocene addition: 8-byte EIP-1559 params [denom_uint32_be][elasticity_uint32_be]
 }
 
 // Id computes an 8-byte identifier by hashing the components of the payload arguments.
@@ -73,6 +74,9 @@ func (args *BuildPayloadArgs) Id() engine.PayloadID {
 	}
 	if args.GasLimit != nil {
 		binary.Write(hasher, binary.BigEndian, *args.GasLimit)
+	}
+	if len(args.EIP1559Params) == 8 {
+		hasher.Write(args.EIP1559Params)
 	}
 
 	var out engine.PayloadID
@@ -261,16 +265,17 @@ func (w *worker) buildPayload(args *BuildPayloadArgs) (*Payload, error) {
 		// to deliver for not missing slot.
 		// In OP-Stack, the "empty" block is constructed from provided txs only, i.e. no tx-pool usage.
 		emptyParams := &generateParams{
-			timestamp:   args.Timestamp,
-			forceTime:   true,
-			parentHash:  args.Parent,
-			coinbase:    args.FeeRecipient,
-			random:      args.Random,
-			withdrawals: args.Withdrawals,
-			beaconRoot:  args.BeaconRoot,
-			noTxs:       true,
-			txs:         args.Transactions,
-			gasLimit:    args.GasLimit,
+			timestamp:     args.Timestamp,
+			forceTime:     true,
+			parentHash:    args.Parent,
+			coinbase:      args.FeeRecipient,
+			random:        args.Random,
+			withdrawals:   args.Withdrawals,
+			beaconRoot:    args.BeaconRoot,
+			noTxs:         true,
+			txs:           args.Transactions,
+			gasLimit:      args.GasLimit,
+			eip1559Params: args.EIP1559Params,
 		}
 		empty := w.getSealingBlock(emptyParams)
 		if empty.err != nil {
@@ -285,16 +290,17 @@ func (w *worker) buildPayload(args *BuildPayloadArgs) (*Payload, error) {
 	}
 
 	fullParams := &generateParams{
-		timestamp:   args.Timestamp,
-		forceTime:   true,
-		parentHash:  args.Parent,
-		coinbase:    args.FeeRecipient,
-		random:      args.Random,
-		withdrawals: args.Withdrawals,
-		beaconRoot:  args.BeaconRoot,
-		noTxs:       false,
-		txs:         args.Transactions,
-		gasLimit:    args.GasLimit,
+		timestamp:     args.Timestamp,
+		forceTime:     true,
+		parentHash:    args.Parent,
+		coinbase:      args.FeeRecipient,
+		random:        args.Random,
+		withdrawals:   args.Withdrawals,
+		beaconRoot:    args.BeaconRoot,
+		noTxs:         false,
+		txs:           args.Transactions,
+		gasLimit:      args.GasLimit,
+		eip1559Params: args.EIP1559Params,
 	}
 
 	// Since we skip building the empty block when using the tx pool, we need to explicitly

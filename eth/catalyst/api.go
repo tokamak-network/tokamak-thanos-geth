@@ -85,9 +85,11 @@ var caps = []string{
 	"engine_getPayloadV1",
 	"engine_getPayloadV2",
 	"engine_getPayloadV3",
+	"engine_getPayloadV4",
 	"engine_newPayloadV1",
 	"engine_newPayloadV2",
 	"engine_newPayloadV3",
+	"engine_newPayloadV4",
 	"engine_getPayloadBodiesByHashV1",
 	"engine_getPayloadBodiesByRangeV1",
 	"engine_getClientVersionV1",
@@ -382,17 +384,22 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 			}
 			transactions = append(transactions, &tx)
 		}
+		var eip1559Params []byte
+		if payloadAttributes.EIP1559Params != nil {
+			eip1559Params = []byte(*payloadAttributes.EIP1559Params)
+		}
 		args := &miner.BuildPayloadArgs{
-			Parent:       update.HeadBlockHash,
-			Timestamp:    payloadAttributes.Timestamp,
-			FeeRecipient: payloadAttributes.SuggestedFeeRecipient,
-			Random:       payloadAttributes.Random,
-			Withdrawals:  payloadAttributes.Withdrawals,
-			BeaconRoot:   payloadAttributes.BeaconRoot,
-			NoTxPool:     payloadAttributes.NoTxPool,
-			Transactions: transactions,
-			GasLimit:     payloadAttributes.GasLimit,
-			Version:      payloadVersion,
+			Parent:        update.HeadBlockHash,
+			Timestamp:     payloadAttributes.Timestamp,
+			FeeRecipient:  payloadAttributes.SuggestedFeeRecipient,
+			Random:        payloadAttributes.Random,
+			Withdrawals:   payloadAttributes.Withdrawals,
+			BeaconRoot:    payloadAttributes.BeaconRoot,
+			NoTxPool:      payloadAttributes.NoTxPool,
+			Transactions:  transactions,
+			GasLimit:      payloadAttributes.GasLimit,
+			Version:       payloadVersion,
+			EIP1559Params: eip1559Params,
 		}
 		id := args.Id()
 		// If we already are busy generating this work, then we do not need
@@ -482,6 +489,15 @@ func (api *ConsensusAPI) GetPayloadV3(payloadID engine.PayloadID) (*engine.Execu
 	return api.getPayload(payloadID, false)
 }
 
+// GetPayloadV4 returns a cached payload by id (Isthmus+).
+// The payload ID is still encoded as V3 (forkchoiceUpdatedV3 is used for all post-Ecotone forks).
+func (api *ConsensusAPI) GetPayloadV4(payloadID engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
+	if !payloadID.Is(engine.PayloadV3) {
+		return nil, engine.UnsupportedFork
+	}
+	return api.getPayload(payloadID, false)
+}
+
 func (api *ConsensusAPI) getPayload(payloadID engine.PayloadID, full bool) (*engine.ExecutionPayloadEnvelope, error) {
 	log.Trace("Engine API request received", "method", "GetPayload", "id", payloadID)
 	data := api.localBlocks.get(payloadID, full)
@@ -543,6 +559,27 @@ func (api *ConsensusAPI) NewPayloadV3(params engine.ExecutableData, versionedHas
 
 	if api.eth.BlockChain().Config().LatestFork(params.Timestamp) != forks.Cancun {
 		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.UnsupportedFork.With(errors.New("newPayloadV3 must only be called for cancun payloads"))
+	}
+	return api.newPayload(params, versionedHashes, beaconRoot)
+}
+
+// NewPayloadV4 creates an Eth1 block for Isthmus+, inserts it in the chain, and returns the status of the chain.
+// executionRequests (EIP-7685) are accepted but ignored for rollup compatibility.
+func (api *ConsensusAPI) NewPayloadV4(params engine.ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, executionRequests []hexutil.Bytes) (engine.PayloadStatusV1, error) {
+	if params.Withdrawals == nil {
+		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.InvalidParams.With(errors.New("nil withdrawals post-shanghai"))
+	}
+	if params.ExcessBlobGas == nil {
+		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.InvalidParams.With(errors.New("nil excessBlobGas post-cancun"))
+	}
+	if params.BlobGasUsed == nil {
+		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.InvalidParams.With(errors.New("nil blobGasUsed post-cancun"))
+	}
+	if versionedHashes == nil {
+		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.InvalidParams.With(errors.New("nil versionedHashes post-cancun"))
+	}
+	if beaconRoot == nil {
+		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.InvalidParams.With(errors.New("nil beaconRoot post-cancun"))
 	}
 	return api.newPayload(params, versionedHashes, beaconRoot)
 }

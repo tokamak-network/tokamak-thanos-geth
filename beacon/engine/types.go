@@ -54,14 +54,19 @@ type PayloadAttributes struct {
 	NoTxPool bool `json:"noTxPool,omitempty" gencodec:"optional"`
 	// GasLimit is a field for rollups: if set, this sets the exact gas limit the block produced with.
 	GasLimit *uint64 `json:"gasLimit,omitempty" gencodec:"optional"`
+	// EIP1559Params is a field for rollups: if set (Holocene+), encodes EIP-1559 denominator and elasticity
+	// as 8 bytes: [denominator_uint32_be][elasticity_uint32_be]. The block extraData will be set to
+	// [0x00][EIP1559Params] (9 bytes total).
+	EIP1559Params *hexutil.Bytes `json:"eip1559Params,omitempty" gencodec:"optional"`
 }
 
 // JSON type overrides for PayloadAttributes.
 type payloadAttributesMarshaling struct {
 	Timestamp hexutil.Uint64
 
-	Transactions []hexutil.Bytes
-	GasLimit     *hexutil.Uint64
+	Transactions  []hexutil.Bytes
+	GasLimit      *hexutil.Uint64
+	EIP1559Params *hexutil.Bytes
 }
 
 //go:generate go run github.com/fjl/gencodec -type ExecutableData -field-override executableDataMarshaling -out gen_ed.go
