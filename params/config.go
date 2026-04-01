@@ -470,6 +470,7 @@ type ChainConfig struct {
 	// Delta: the Delta upgrade does not affect the execution-layer, and is thus not configurable in the chain config.
 	EcotoneTime *uint64 `json:"ecotoneTime,omitempty"` // Ecotone switch time (nil = no fork, 0 = already on optimism ecotone)
 	FjordTime   *uint64 `json:"fjordTime,omitempty"`   // Fjord switch time (nil = no fork, 0 = already on Optimism Fjord)
+	IsthmusTime *uint64 `json:"isthmusTime,omitempty"` // Isthmus switch time (nil = no fork, 0 = already on Optimism Isthmus)
 
 	InteropTime *uint64 `json:"interopTime,omitempty"` // Interop switch time (nil = no fork, 0 = already on optimism interop)
 
@@ -769,6 +770,10 @@ func (c *ChainConfig) IsFjord(time uint64) bool {
 	return isTimestampForked(c.FjordTime, time)
 }
 
+func (c *ChainConfig) IsIsthmus(time uint64) bool {
+	return isTimestampForked(c.IsthmusTime, time)
+}
+
 func (c *ChainConfig) IsInterop(time uint64) bool {
 	return isTimestampForked(c.InteropTime, time)
 }
@@ -797,6 +802,10 @@ func (c *ChainConfig) IsOptimismEcotone(time uint64) bool {
 
 func (c *ChainConfig) IsOptimismFjord(time uint64) bool {
 	return c.IsOptimism() && c.IsFjord(time)
+}
+
+func (c *ChainConfig) IsOptimismIsthmus(time uint64) bool {
+	return c.IsOptimism() && c.IsIsthmus(time)
 }
 
 // IsOptimismPreBedrock returns true iff this is an optimism node & bedrock is not yet active

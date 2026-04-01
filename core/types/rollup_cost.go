@@ -23,6 +23,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -54,6 +55,8 @@ var (
 	BedrockL1AttributesSelector = []byte{0x01, 0x5d, 0x8e, 0xb9}
 	// EcotoneL1AttributesSelector is the selector indicating Ecotone style L1 gas attributes.
 	EcotoneL1AttributesSelector = []byte{0x44, 0x0a, 0x5e, 0x20}
+	// IsthmusL1AttributesSelector is the selector indicating Isthmus style L1 gas attributes.
+	IsthmusL1AttributesSelector = crypto.Keccak256([]byte("setL1BlockValuesIsthmus()"))[:4]
 
 	// L1BlockAddr is the address of the L1Block contract which stores the L1 gas attributes.
 	L1BlockAddr = common.HexToAddress("0x4200000000000000000000000000000000000015")
@@ -248,6 +251,8 @@ type gasParams struct {
 	feeScalar           *big.Float // pre-ecotone
 	l1BaseFeeScalar     *uint32    // post-ecotone
 	l1BlobBaseFeeScalar *uint32    // post-ecotone
+	operatorFeeScalar   *uint32    // post-isthmus
+	operatorFeeConstant *uint64    // post-isthmus
 }
 
 // intToScaledFloat returns scalar/10e6 as a float
@@ -264,6 +269,22 @@ func extractL1GasParams(config *params.ChainConfig, time uint64, data []byte) (g
 	// If so, fall through to the pre-ecotone format
 	// Both Ecotone and Fjord use the same function selector
 	if config.IsEcotone(time) && len(data) >= 4 && !bytes.Equal(data[0:4], BedrockL1AttributesSelector) {
+		// Isthmus uses a distinct selector and 176-byte calldata
+		if bytes.Equal(data[0:4], IsthmusL1AttributesSelector) {
+			p, err := extractL1GasParamsPostIsthmus(data)
+			if err != nil {
+				return gasParams{}, err
+			}
+			// L1 data fee formula is unchanged from Ecotone; operator fee is execution-layer
+			p.costFunc = newL1CostFuncEcotone(
+				p.l1BaseFee,
+				p.l1BlobBaseFee,
+				big.NewInt(int64(*p.l1BaseFeeScalar)),
+				big.NewInt(int64(*p.l1BlobBaseFeeScalar)),
+			)
+			return p, nil
+		}
+
 		p, err := extractL1GasParamsPostEcotone(data)
 		if err != nil {
 			return gasParams{}, err
@@ -335,6 +356,43 @@ func extractL1GasParamsPostEcotone(data []byte) (gasParams, error) {
 		l1BlobBaseFee:       l1BlobBaseFee,
 		l1BaseFeeScalar:     &l1BaseFeeScalar,
 		l1BlobBaseFeeScalar: &l1BlobBaseFeeScalar,
+	}, nil
+}
+
+// extractL1GasParamsPostIsthmus extracts the gas parameters from L1 attribute info calldata after
+// the Isthmus upgrade. Isthmus extends Ecotone with operatorFeeScalar (uint32) and
+// operatorFeeConstant (uint64) packed at bytes [164:176].
+func extractL1GasParamsPostIsthmus(data []byte) (gasParams, error) {
+	if len(data) != 176 {
+		return gasParams{}, fmt.Errorf("expected 176 L1 info bytes, got %d", len(data))
+	}
+	// data layout assumed for Isthmus (Ecotone fields + operator fee):
+	// offset type varname
+	// 0     <selector>
+	// 4     uint32 _basefeeScalar
+	// 8     uint32 _blobBaseFeeScalar
+	// 12    uint64 _sequenceNumber
+	// 20    uint64 _timestamp
+	// 28    uint64 _l1BlockNumber
+	// 36    uint256 _basefee
+	// 68    uint256 _blobBaseFee
+	// 100   bytes32 _hash
+	// 132   bytes32 _batcherHash
+	// 164   uint32 _operatorFeeScalar
+	// 168   uint64 _operatorFeeConstant
+	l1BaseFee := new(big.Int).SetBytes(data[36:68])
+	l1BlobBaseFee := new(big.Int).SetBytes(data[68:100])
+	l1BaseFeeScalar := binary.BigEndian.Uint32(data[4:8])
+	l1BlobBaseFeeScalar := binary.BigEndian.Uint32(data[8:12])
+	operatorFeeScalar := binary.BigEndian.Uint32(data[164:168])
+	operatorFeeConstant := binary.BigEndian.Uint64(data[168:176])
+	return gasParams{
+		l1BaseFee:           l1BaseFee,
+		l1BlobBaseFee:       l1BlobBaseFee,
+		l1BaseFeeScalar:     &l1BaseFeeScalar,
+		l1BlobBaseFeeScalar: &l1BlobBaseFeeScalar,
+		operatorFeeScalar:   &operatorFeeScalar,
+		operatorFeeConstant: &operatorFeeConstant,
 	}, nil
 }
 
