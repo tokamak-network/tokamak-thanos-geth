@@ -51,3 +51,6 @@ logs/
 
 tests/spec-tests/
 .worktrees/
+
+docs/superpowers/
+docs/codex-review/
